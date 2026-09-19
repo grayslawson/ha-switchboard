@@ -25,6 +25,8 @@ jobs:
         env:
           GH_MIRROR_TOKEN: ${{ secrets.GH_MIRROR_TOKEN }}
         run: |
+          set -euo pipefail
+          auth_header="$(printf 'x-access-token:%s' "$GH_MIRROR_TOKEN" | base64 | tr -d '\n')"
           git -C "$RUNNER_TEMP/public" init --initial-branch=master
           git -C "$RUNNER_TEMP/public" config user.name "ha-switchboard mirror"
           git -C "$RUNNER_TEMP/public" config user.email "mirror@users.noreply.github.com"
@@ -32,7 +34,7 @@ jobs:
           git -C "$RUNNER_TEMP/public" commit -m "Mirror Forgejo ${GITHUB_SHA}"
           git -C "$RUNNER_TEMP/public" remote add github https://github.com/grayslawson/ha-switchboard.git
           if [ "${GITHUB_REF_TYPE:-branch}" = "tag" ]; then
-            git -C "$RUNNER_TEMP/public" -c "http.extraheader=AUTHORIZATION: bearer ${GH_MIRROR_TOKEN}" push --force github "HEAD:refs/tags/${GITHUB_REF_NAME}"
+            git -C "$RUNNER_TEMP/public" -c "http.extraheader=AUTHORIZATION: basic ${auth_header}" push --force github "HEAD:refs/tags/${GITHUB_REF_NAME}"
           else
-            git -C "$RUNNER_TEMP/public" -c "http.extraheader=AUTHORIZATION: bearer ${GH_MIRROR_TOKEN}" push --force github HEAD:master
+            git -C "$RUNNER_TEMP/public" -c "http.extraheader=AUTHORIZATION: basic ${auth_header}" push --force github HEAD:master
           fi
