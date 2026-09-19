@@ -1,0 +1,16 @@
+{
+  "installation_key": "local-smoke",
+  "entities": [
+    {
+      "adapter_ref": "capability-living-room-light",
+      "name": "Living room lights",
+      "domain": "light",
+      "area": "Living room",
+      "exposed": true,
+      "available": true,
+      "operations": ["turn_on", "turn_off"]
+    }
+  ],
+  "organization": {"areas": ["Living room"]},
+  "services": [{"domain": "light", "operations": ["turn_on", "turn_off"]}]
+}

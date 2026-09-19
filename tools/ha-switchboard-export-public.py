@@ -36,9 +36,11 @@ ALLOWED_FILES = frozenset(
         "tools/check_release_boundary.py",
         "tools/ha-switchboard-scan.py",
         "tools/ha-switchboard-export-public.py",
+        "tools/app-image-smoke.sh",
+        "tools/verify-ghcr-image.py",
     }
 )
-EXCLUDED_DIRECTORIES = frozenset({".devcontainer", ".forgejo"})
+EXCLUDED_DIRECTORIES = frozenset({".devcontainer", ".forgejo", ".github"})
 EXCLUDED_FILES = frozenset(
     {
         "docs/PUBLIC_REPOSITORY.md",

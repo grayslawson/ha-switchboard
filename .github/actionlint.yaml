@@ -1,0 +1,9 @@
+self-hosted-runner:
+  labels:
+    - ha-switchboard
+
+paths:
+  ".forgejo/workflows/**/*.yml":
+    ignore:
+      - 'undefined variable "forgejo"'
+      - 'context "secrets" is not allowed here'

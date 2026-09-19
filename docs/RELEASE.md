@@ -19,9 +19,24 @@ intentionally independent from any operator's NixOS or Home Assistant setup.
 
 ```bash
 python3 -m compileall app/ha_switchboard custom_components/ha_switchboard
-pytest -q tests
+python3 -m pytest -q tests
+# Private Forgejo checkout: lint the self-hosted workflows.
+actionlint -config-file .github/actionlint.yaml .forgejo/workflows/*.yml
 python3 tools/check_release_boundary.py
+tools/app-image-smoke.sh
 ```
+
+The checked-in image smoke harness is intentionally local and credential-free.
+It builds the App image with Podman or Docker, checks the non-root runtime
+identity and gateway health/readiness behavior, reconciles a sanitized fixture,
+and recreates the container to confirm persisted state returns stale and
+fail-closed. Forgejo runs the same amd64 smoke path on trusted repository
+events; pull requests from untrusted forks do not execute submitted container
+code on the self-hosted runner.
+
+The actionlint command applies to the private Forgejo source checkout; the
+public export intentionally omits the private `.forgejo/` workflows and their
+runner configuration.
 
 The release pipeline builds the App for `amd64` and `arm64` and publishes the
 multi-architecture image referenced by `app/config.yaml` to
@@ -29,6 +44,14 @@ multi-architecture image referenced by `app/config.yaml` to
 of any particular Home Assistant installation, CI host, or private network.
 Registry credentials used by automation must be narrowly scoped to the
 published package and must never be committed to the repository.
+
+The OCI source label proves image provenance but does not by itself connect a
+package that was pushed with a personal access token to the GitHub repository.
+After the first GHCR publication, the package owner must use GitHub's package
+page to connect `ha-switchboard` to `grayslawson/ha-switchboard`; the repository
+sidebar may otherwise continue to show “No packages published” even while the
+public image and its tags are pullable. Do not delete and recreate the package
+just to change this association.
 
 Before requesting inclusion in HACS's default catalog, pass the HACS and
 Hassfest jobs in Forgejo, publish a full GitHub Release through the Forgejo

@@ -29,6 +29,23 @@ The App image is built by the private Forgejo workflow on the dedicated
 `ha-switchboard` runner and pushed directly to GHCR. GitHub does not rebuild
 the image or run release automation.
 
+## GHCR package association
+
+The package at `ghcr.io/grayslawson/ha-switchboard` is public and is verified
+after every private build for its version tags, `latest` (on `master`), Linux
+`amd64`/`arm64` manifests, and OCI source label. A package pushed with the
+Forgejo-owned `GH_PACKAGE_TOKEN` is not automatically linked to the GitHub
+repository, even when the image label names that repository. Until the owner
+connects it in the package page (`Profile → Packages → ha-switchboard →
+Connect repository → grayslawson/ha-switchboard`), GitHub's repository sidebar
+can show `No packages published` while the image is already pullable.
+
+This is a GitHub package metadata operation, not a reason to delete the image.
+Keep the existing tags and digests intact, perform the one-time UI
+association, and then verify that `GET
+/user/packages/container/ha-switchboard` reports the repository and that the
+repository package sidebar displays the image.
+
 The public export intentionally excludes `.forgejo/`, private specifications,
 operator notes, homelab configuration, and any future unallowlisted path. A
 new public file must be added to

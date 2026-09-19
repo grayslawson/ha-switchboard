@@ -2,8 +2,26 @@ name: Validate Home Assistant metadata
 
 on:
   push:
+    paths:
+      - "custom_components/**"
+      - "hacs.json"
+      - "repository.yaml"
+      - "README.md"
+      - "docs/**"
+      - ".forgejo/workflows/**"
   pull_request:
+    paths:
+      - "custom_components/**"
+      - "hacs.json"
+      - "repository.yaml"
+      - "README.md"
+      - "docs/**"
+      - ".forgejo/workflows/**"
   workflow_dispatch:
+
+concurrency:
+  group: validation-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   hassfest:
@@ -14,35 +32,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Verify runner prerequisites
+        run: |
+          set -euo pipefail
+          command -v podman
+          podman --version
+          podman info
       - name: Validate Home Assistant metadata
-        run: |
-          set -euo pipefail
-          podman run --rm \
-            --workdir /github/workspace \
-            --volume "$PWD:/github/workspace:ro" \
-            ghcr.io/home-assistant/hassfest@sha256:66b55a8ce14cdcf0c200dd4dab1f3228ac8d3f6e0404ec710a0d8a79b296eba4
-
-  hacs:
-    name: HACS validation
-    runs-on: ha-switchboard
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - name: Validate public integration with HACS
-        env:
-          GH_MIRROR_TOKEN: ${{ secrets.GH_MIRROR_TOKEN }}
-        run: |
-          set -euo pipefail
-          test -n "$GH_MIRROR_TOKEN"
-          export INPUT_GITHUB_TOKEN="$GH_MIRROR_TOKEN"
-          podman run --rm \
-            --env INPUT_GITHUB_TOKEN \
-            --env REPOSITORY=grayslawson/ha-switchboard \
-            --env CATEGORY=integration \
-            --env REPOSITORY_REF=master \
-            --env GITHUB_WORKSPACE=/github/workspace \
-            --volume "$PWD:/github/workspace:ro" \
-            ghcr.io/hacs/action@sha256:dc92fdad2f6ffbe74bffb7269d781ea8e064f52d9bb486cdf3925d74e7ab6ebf
-          unset INPUT_GITHUB_TOKEN
+        run: podman run --rm --workdir /github/workspace --volume "$PWD:/github/workspace:ro" ghcr.io/home-assistant/hassfest@sha256:66b55a8ce14cdcf0c200dd4dab1f3228ac8d3f6e0404ec710a0d8a79b296eba4
