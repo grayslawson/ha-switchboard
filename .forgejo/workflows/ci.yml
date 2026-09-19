@@ -2,7 +2,41 @@ name: CI
 
 on:
   push:
+    paths:
+      - "app/**"
+      - "custom_components/**"
+      - "standalone/**"
+      - "tests/**"
+      - "tools/**"
+      - "docs/**"
+      - ".forgejo/workflows/**"
+      - ".devcontainer/**"
+      - ".github/**"
+      - "README.md"
+      - "LICENSE"
+      - "hacs.json"
+      - "pyproject.toml"
+      - "repository.yaml"
   pull_request:
+    paths:
+      - "app/**"
+      - "custom_components/**"
+      - "standalone/**"
+      - "tests/**"
+      - "tools/**"
+      - "docs/**"
+      - ".forgejo/workflows/**"
+      - ".devcontainer/**"
+      - ".github/**"
+      - "README.md"
+      - "LICENSE"
+      - "hacs.json"
+      - "pyproject.toml"
+      - "repository.yaml"
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   checks:
@@ -10,8 +44,19 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
-      - name: Verify host Python
-        run: python3 -m pytest --version
+        with:
+          persist-credentials: false
+      - name: Verify runner prerequisites
+        run: |
+          set -euo pipefail
+          command -v git
+          command -v python3
+          command -v actionlint
+          python3 --version
+          python3 -m pytest --version
+          actionlint -version
+      - name: Lint Forgejo workflows
+        run: actionlint -config-file .github/actionlint.yaml .forgejo/workflows/*.yml
       - name: Compile Python
         run: python3 -m compileall app/ha_switchboard custom_components/ha_switchboard tools
       - name: Run tests
@@ -20,5 +65,29 @@ jobs:
         run: python3 tools/check_release_boundary.py
       - name: Check public export
         run: |
+          set -euo pipefail
           python3 tools/ha-switchboard-export-public.py "$RUNNER_TEMP/public"
           python3 "$RUNNER_TEMP/public/tools/check_release_boundary.py" --root "$RUNNER_TEMP/public"
+
+  app-smoke-amd64:
+    # The smoke build executes the submitted Dockerfile and Python code. Do not
+    # run it on an untrusted fork's pull request on the self-hosted runner.
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ha-switchboard
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify runner prerequisites
+        run: |
+          set -euo pipefail
+          command -v podman
+          command -v curl
+          command -v python3
+          podman --version
+          podman info
+      - name: Build and exercise local App image
+        env:
+          TARGET_PLATFORM: linux/amd64
+        run: tools/app-image-smoke.sh

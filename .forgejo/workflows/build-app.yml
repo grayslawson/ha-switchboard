@@ -6,10 +6,17 @@ on:
       - master
     tags:
       - "v*"
+    paths:
+      - "app/**"
+      - ".forgejo/workflows/build-app.yml"
   workflow_dispatch:
 
 env:
   IMAGE: ghcr.io/grayslawson/ha-switchboard
+
+concurrency:
+  group: app-publish-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -29,7 +36,11 @@ jobs:
           export HOME="$runner_home"
           command -v podman
           command -v python3
+          command -v curl
+          python3 --version
+          podman --version
           podman info
+          podman manifest --help >/dev/null
 
       - name: Resolve and verify release version
         id: version
@@ -88,3 +99,22 @@ jobs:
           podman manifest push --all \
             "localhost/ha-switchboard:${VERSION}" \
             "docker://${IMAGE}:latest"
+
+      - name: Verify published multi-architecture image
+        env:
+          GHCR_USERNAME: grayslawson
+          GHCR_TOKEN: ${{ secrets.GH_PACKAGE_TOKEN }}
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          set -euo pipefail
+          python3 tools/verify-ghcr-image.py \
+            --image "${IMAGE}" \
+            --tag "${VERSION}" \
+            --source-url "https://github.com/grayslawson/ha-switchboard"
+          ref_type="${FORGEJO_REF_TYPE:-${GITHUB_REF_TYPE:-branch}}"
+          if [ "$ref_type" = "branch" ]; then
+            python3 tools/verify-ghcr-image.py \
+              --image "${IMAGE}" \
+              --tag latest \
+              --source-url "https://github.com/grayslawson/ha-switchboard"
+          fi

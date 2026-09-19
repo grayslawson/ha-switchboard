@@ -101,6 +101,8 @@ curl http://127.0.0.1:8099/healthz
 
 Useful variables are `HA_SWITCHBOARD_VERSION` (default `dev`), `HA_SWITCHBOARD_PORT` (default `8099`), and `HA_SWITCHBOARD_DATA` (default `./data`). Protect the published port with your own network boundary and gateway token. The standalone Compose file explicitly disables the Supervisor-only source-address restriction.
 
+The published App image is available at [`ghcr.io/grayslawson/ha-switchboard`](https://ghcr.io/grayslawson/ha-switchboard), with versioned tags and `latest` for the current `master` build. The image is multi-architecture (`amd64` and `arm64`) and carries the GitHub source label used by the release verification job.
+
 ## Configuration
 
 ### App options
@@ -210,13 +212,24 @@ Run the fast local checks:
 
 ```bash
 python3 -m compileall app/ha_switchboard custom_components/ha_switchboard
-pytest -q tests
+python3 -m pytest -q tests
+# Private Forgejo checkout: lint the self-hosted workflows.
+actionlint -config-file .github/actionlint.yaml .forgejo/workflows/*.yml
 python3 tools/check_release_boundary.py
+tools/app-image-smoke.sh
 ```
 
-The public release tree is intentionally limited to the App, Core integration,
-standalone deployment, tests, public CI, and user-facing tooling. See
+The image smoke harness needs Podman or Docker and exercises the App locally
+without Home Assistant or provider credentials. It verifies the declared
+non-root identity, health/readiness transitions, gateway-token protection,
+sanitized profile persistence, and fail-closed state after a container
+recreation. The public release tree is intentionally limited to the App, Core
+integration, standalone deployment, tests, public CI, and user-facing tooling. See
 [docs/RELEASE.md](docs/RELEASE.md) for App/HACS release checks.
+
+The actionlint command applies to the private Forgejo source checkout; the
+public export intentionally omits the private `.forgejo/` workflows and their
+runner configuration.
 
 ## Documentation and license
 

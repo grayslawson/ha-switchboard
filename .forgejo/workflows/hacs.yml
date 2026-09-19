@@ -1,0 +1,48 @@
+name: Validate HACS integration
+
+# HACS needs a token to inspect the public GitHub mirror. This workflow is
+# deliberately not wired to pull_request, so fork and ordinary PR jobs never
+# receive GH_MIRROR_TOKEN.
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - "v*"
+    paths:
+      - "custom_components/**"
+      - "hacs.json"
+      - "repository.yaml"
+      - "README.md"
+      - "docs/**"
+      - ".forgejo/workflows/**"
+  workflow_dispatch:
+
+concurrency:
+  group: hacs-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  hacs:
+    name: HACS validation
+    runs-on: ha-switchboard
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify runner prerequisites
+        run: |
+          set -euo pipefail
+          command -v podman
+          podman --version
+          podman info
+      - name: Validate public integration with HACS
+        env:
+          GH_MIRROR_TOKEN: ${{ secrets.GH_MIRROR_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$GH_MIRROR_TOKEN"
+          export INPUT_GITHUB_TOKEN="$GH_MIRROR_TOKEN"
+          podman run --rm --env INPUT_GITHUB_TOKEN --env REPOSITORY=grayslawson/ha-switchboard --env CATEGORY=integration --env REPOSITORY_REF=master --env GITHUB_WORKSPACE=/github/workspace --volume "$PWD:/github/workspace:ro" ghcr.io/hacs/action@sha256:dc92fdad2f6ffbe74bffb7269d781ea8e064f52d9bb486cdf3925d74e7ab6ebf
+          unset INPUT_GITHUB_TOKEN

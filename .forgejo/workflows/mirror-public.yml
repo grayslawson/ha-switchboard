@@ -6,7 +6,26 @@ on:
       - master
     tags:
       - "v*"
+    paths:
+      - "app/**"
+      - "custom_components/**"
+      - "standalone/**"
+      - "tests/**"
+      - "tools/check_release_boundary.py"
+      - "tools/ha-switchboard-scan.py"
+      - "tools/verify-ghcr-image.py"
+      - "docs/RELEASE.md"
+      - "README.md"
+      - "LICENSE"
+      - "hacs.json"
+      - "pyproject.toml"
+      - "repository.yaml"
+      - ".forgejo/workflows/mirror-public.yml"
   workflow_dispatch:
+
+concurrency:
+  group: mirror-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   mirror:
@@ -17,6 +36,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+          persist-credentials: false
       - name: Export allowlisted public tree
         run: |
           python3 tools/ha-switchboard-export-public.py "$RUNNER_TEMP/public"
@@ -38,6 +58,22 @@ jobs:
           else
             git -C "$RUNNER_TEMP/public" -c "http.extraheader=AUTHORIZATION: basic ${auth_header}" push --force github HEAD:master
           fi
+      - name: Verify public mirror ref
+        env:
+          EXPECTED_REF_TYPE: ${{ forgejo.ref_type }}
+          EXPECTED_REF_NAME: ${{ forgejo.ref_name }}
+        run: |
+          set -euo pipefail
+          expected_sha="$(git -C "$RUNNER_TEMP/public" rev-parse HEAD)"
+          if [ "$EXPECTED_REF_TYPE" = "tag" ]; then
+            remote_ref="refs/tags/$EXPECTED_REF_NAME"
+          else
+            remote_ref="refs/heads/master"
+          fi
+          remote_sha="$(git ls-remote https://github.com/grayslawson/ha-switchboard.git "$remote_ref" | awk 'NR == 1 { print $1 }')"
+          test -n "$remote_sha"
+          test "$remote_sha" = "$expected_sha"
+          echo "GitHub mirror verified: $remote_ref -> $remote_sha"
       - name: Create or update GitHub release from tag
         if: ${{ forgejo.ref_type == 'tag' }}
         env:
@@ -80,4 +116,33 @@ jobs:
               print(f"created GitHub release {tag}")
           else:
               print(f"GitHub release already exists: {release['html_url']}")
+          PY
+      - name: Verify GitHub release
+        if: ${{ forgejo.ref_type == 'tag' }}
+        env:
+          GH_MIRROR_TOKEN: ${{ secrets.GH_MIRROR_TOKEN }}
+          RELEASE_TAG: ${{ forgejo.ref_name }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          from urllib.request import Request, urlopen
+
+          tag = os.environ["RELEASE_TAG"]
+          token = os.environ["GH_MIRROR_TOKEN"]
+          request = Request(
+              f"https://api.github.com/repos/grayslawson/ha-switchboard/releases/tags/{tag}",
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": f"Bearer {token}",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+          )
+          with urlopen(request, timeout=30) as response:
+              release = json.loads(response.read())
+          assert release.get("tag_name") == tag, release
+          assert release.get("draft") is False, release
+          assert release.get("prerelease") is False, release
+          print(f"GitHub release verified: {release['html_url']}")
           PY
