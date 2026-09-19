@@ -4,7 +4,7 @@ HA Switchboard is a small, local-first control layer for [Home Assistant](https:
 
 The goal is simple: make everyday home control quick and inexpensive, then hand genuinely open-ended requests to a user-approved traditional LLM when policy says that is appropriate.
 
-> **Project status: experimental (`0.1.0`)**
+> **Project status: experimental (`0.1.1`)**
 >
 > The gateway, profile model, policy checks, Home Assistant integration contract, and packaging paths are implemented and tested. Automatic discovery, production downstream-provider adapters, and a polished end-user setup flow are still being developed. Read [Current limitations and roadmap](#current-limitations-and-roadmap) before deploying this to a real home.
 
@@ -67,7 +67,7 @@ The App and Core integration are intentionally separate artifacts.
 
 1. In **Settings → Add-ons → Add-on store**, open the three-dot menu and add the App repository: [`https://github.com/grayslawson/ha-switchboard`](https://github.com/grayslawson/ha-switchboard).
 2. Install **HA Switchboard**, start it, and open its Web UI if desired.
-3. In the App configuration, set the Jev endpoint and key if you have a Jev service. Configure a gateway token if the gateway will be reached outside the default Supervisor ingress path.
+3. Configure the App using the complete [App configuration guide](app/DOCS.md). For the current release, use `adapter_only`, set `ingress_only` to `false` when the Core integration will call `http://ha-switchboard:8099` directly, leave the Jev fields blank unless you have a Switchboard-compatible Jev service, set `profile_refresh_minutes` to `15`, and use `local_only` privacy mode.
 4. Install the Core integration using the HACS instructions below.
 5. In **Settings → Devices & services → Add integration**, add **HA Switchboard** and enter the gateway URL and the same optional gateway token.
 6. Select the resulting Switchboard conversation agent in the Assist pipeline you want to use.
@@ -107,17 +107,38 @@ The published App image is available at [`ghcr.io/grayslawson/ha-switchboard`](h
 
 ### App options
 
-The Supervisor App exposes these options:
+The Supervisor App exposes these options. The full values-and-troubleshooting
+guide is in [app/DOCS.md](app/DOCS.md).
 
 | Option | Purpose |
 | --- | --- |
-| `gateway_mode` | `adapter_only` by default; `supervisor_read_only` is reserved for the separately reviewed read-only adapter path. |
-| `jev_endpoint` / `jev_api_key` | Jev decision endpoint and credential. |
-| `gateway_token` | Token required for protected gateway endpoints. Health and readiness remain available for checks. |
-| `profile_refresh_minutes` | Intended profile refresh interval, from 1 to 1440 minutes. |
-| `privacy_mode` | `local_only`, `jev_hosted_allowed`, or `hosted_allowed`. |
+| `ingress_only` | `true` accepts only Supervisor ingress (`172.30.32.2`). Set `false` only for direct Core/adapter calls, which then require `gateway_token`. |
+| `gateway_mode` | Use `adapter_only`. `supervisor_read_only` is reserved for the separately reviewed read-only adapter path. |
+| `jev_endpoint` | Leave blank unless the service implements Switchboard's typed Jev contract. The current App cannot use OpenRouter directly. |
+| `jev_api_key` | Credential for the configured Jev service; leave blank with no endpoint. This is not the gateway token. |
+| `gateway_token` | A long random bearer token for the Core integration and other direct callers. Use the same value in the Integration configuration. |
+| `profile_refresh_minutes` | Use `15`; accepted range is 1–1440. This option does not yet create automatic Home Assistant discovery. |
+| `privacy_mode` | Use `local_only` by default. `jev_hosted_allowed` is for a working hosted Jev adapter; `hosted_allowed` also permits hosted downstream routes. |
 
 Keep credentials in Supervisor options or the deployment's runtime secret mechanism. Never commit them to Compose files, fixtures, logs, or the repository.
+
+The App is the gateway, but `gateway_token` protects HTTP calls into that
+gateway. Supervisor ingress authenticates the App UI; the Core integration
+can call the App's direct internal URL when `ingress_only` is `false` and sends
+the token. The token is not an OpenRouter key. Generate one with
+`openssl rand -hex 32` and copy the same value into the App and the HA
+Switchboard Integration.
+
+### OpenRouter and Jev
+
+OpenRouter's Jev Decisions endpoint is `https://openrouter.ai/api/alpha/decisions`.
+It expects a model, `state`, and `questions`, and returns `answers`; the
+current Switchboard client sends its own bounded payload and expects a typed
+`decision` response. The App also has no model option. Consequently, do not
+enter the OpenRouter Decisions URL or `/api/v1/chat/completions` directly in
+`jev_endpoint` until an OpenRouter translation adapter is installed. See the
+[OpenRouter API specification](https://openrouter.ai/openapi.json),
+[Typesafe model page](https://openrouter.ai/typesafe), and the [App guide](app/DOCS.md).
 
 ### Gateway API
 
@@ -185,6 +206,13 @@ The scanner is a development/adapter utility, not a replacement for a production
 - A downstream model cannot choose a provider by name, invent arbitrary capabilities, or bypass confirmation and freshness checks.
 - Supervisor App ingress accepts the Supervisor source address only. The App is non-privileged, does not use host networking, and does not request the Home Assistant or Supervisor API in its default adapter-only mode.
 - The standalone deployment has no Supervisor boundary; secure it with your own network controls and a gateway token.
+
+The App follows Home Assistant's [App security guidance](https://developers.home-assistant.io/docs/apps/security/):
+no host networking or privileged devices, no Home Assistant/Supervisor API
+access in the default mode, an unprivileged runtime identity, a custom
+AppArmor profile, and ingress restricted to `172.30.32.2`. See Home
+Assistant's [App presentation guidance](https://developers.home-assistant.io/docs/apps/presentation/)
+for the AppArmor and ingress requirements.
 
 See [app/DOCS.md](app/DOCS.md) for App-specific behavior and [docs/RELEASE.md](docs/RELEASE.md) for the packaging and acceptance checklist.
 

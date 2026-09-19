@@ -1,6 +1,6 @@
 FROM python:3.12-alpine
 
-ARG BUILD_VERSION=0.1.0
+ARG BUILD_VERSION=0.1.1
 ARG BUILD_ARCH
 
 LABEL \
@@ -17,6 +17,10 @@ WORKDIR /app
 COPY --chown=65532:65532 ha_switchboard /app/ha_switchboard
 COPY --chown=65532:65532 run.sh /run.sh
 COPY --chown=65532:65532 data/.keep /data/.keep
+
+# Keep the entrypoint executable even when the build context is exported by a
+# tool that does not preserve Git's executable-bit metadata.
+RUN chmod 0555 /run.sh
 
 # Use a numeric unprivileged identity so the same Dockerfile can be assembled
 # for amd64 and arm64 without executing target-architecture binaries during

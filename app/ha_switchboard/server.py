@@ -96,12 +96,16 @@ class GatewayHandler(BaseHTTPRequestHandler):
         return value
 
     def _authorized(self) -> bool:
-        if self.ingress_only and self.client_address[0] != "172.30.32.2":
+        from_ingress = self.client_address[0] == "172.30.32.2"
+        if self.ingress_only and not from_ingress:
             self._write(403, {"error": {"code": "ingress_source_forbidden"}})
             return False
         expected = getattr(self.gateway, "gateway_token", "")
-        if not expected or self.path in {"/healthz", "/readyz"}:
+        if from_ingress or self.path in {"/healthz", "/readyz"}:
             return True
+        if not expected:
+            self._write(401, {"error": {"code": "gateway_token_required"}})
+            return False
         supplied = self.headers.get("Authorization", "")
         if supplied == f"Bearer {expected}":
             return True
