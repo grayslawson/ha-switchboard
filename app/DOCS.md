@@ -214,9 +214,9 @@ The App's custom profile must allow its shell entrypoint, Python runtime, and
 This means the App image is older than the startup-permission fix or the
 Supervisor is still using a cached image. The App's custom AppArmor profile
 must allow `/run.sh`, `/bin/sh`, the Alpine BusyBox shell, and the Python
-entrypoint. Update the App repository, install the newer App version, and
-restart it. If Supervisor still reports the old image, stop the App, refresh
-the repository, update/reinstall the App, and start it again.
+entrypoint. Update the App repository to `0.1.2` or newer, install the newer
+App version, and restart it. If Supervisor still reports the old image, stop
+the App, refresh the repository, update/reinstall the App, and start it again.
 
 If the error persists on the repaired image, inspect the host's AppArmor audit
 events:
@@ -227,6 +227,27 @@ journalctl _TRANSPORT=audit -g 'apparmor='
 
 Do not solve this by disabling AppArmor or protection mode. Home Assistant
 recommends a custom profile and least-privilege defaults for secure Apps.
+
+### `libpython3.12.so.1.0: No such file or directory` or `Py_BytesMain: symbol not found`
+
+When these errors appear together with the `/run.sh` permission error, the
+library is normally present in the image but AppArmor is denying the dynamic
+loader's read or executable memory mapping. The repaired profile in App `0.1.2`
+allows read-only mappings for `/lib/**`, `/usr/lib/**`, and `/usr/local/lib/**`,
+which covers Alpine's musl loader, `libpython`, and Python's native extension
+modules. Update/reinstall the App and restart it; do not install a second
+Python package or disable AppArmor.
+
+If the failure persists after the update, inspect the AppArmor audit events and
+look for denied paths under those three library trees:
+
+```bash
+journalctl _TRANSPORT=audit -g 'apparmor='
+```
+
+The `name=` field in a denial identifies the path that still needs to be
+compared with the installed App version. Capture the diagnostic only after
+redacting hostnames, tokens, and other private values.
 
 ### Gateway unavailable from the Core integration
 

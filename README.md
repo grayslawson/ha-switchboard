@@ -4,7 +4,7 @@ HA Switchboard is a small, local-first control layer for [Home Assistant](https:
 
 The goal is simple: make everyday home control quick and inexpensive, then hand genuinely open-ended requests to a user-approved traditional LLM when policy says that is appropriate.
 
-> **Project status: experimental (`0.1.1`)**
+> **Project status: experimental (`0.1.2`)**
 >
 > The gateway, profile model, policy checks, Home Assistant integration contract, and packaging paths are implemented and tested. Automatic discovery, production downstream-provider adapters, and a polished end-user setup flow are still being developed. Read [Current limitations and roadmap](#current-limitations-and-roadmap) before deploying this to a real home.
 

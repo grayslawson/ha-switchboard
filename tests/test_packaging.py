@@ -35,6 +35,12 @@ def test_app_entrypoint_is_executable_under_custom_apparmor_profile() -> None:
     assert "RUN chmod 0555 /run.sh" in dockerfile
     for rule in ("/run.sh rix", "/bin/sh rix", "/bin/busybox rix", "/usr/local/bin/python3 rix"):
         assert rule in apparmor
+    for rule in (
+        "/lib/** mr",
+        "/usr/lib/** mr",
+        "/usr/local/lib/** mr",
+    ):
+        assert rule in apparmor
 
 
 def test_devcontainer_is_development_only() -> None:

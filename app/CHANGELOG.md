@@ -2,7 +2,15 @@
 
 All notable App changes will be recorded here.
 
-## 0.1.1 - Unreleased
+## 0.1.2 - 2026-09-19
+
+- Allowed the Alpine dynamic loader, system libraries, libpython, and Python
+  extension modules to be read and memory-mapped under the custom AppArmor
+  profile. This fixes startup failures that appeared as missing
+  `libpython3.12.so.1.0` and `Py_BytesMain` relocation errors.
+- Added a packaging regression check and documented the AppArmor diagnosis.
+
+## 0.1.1 - 2026-09-19
 
 - Fixed the custom AppArmor profile so the non-root shell entrypoint and Python
   runtime can start under Supervisor protection.
