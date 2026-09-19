@@ -26,7 +26,7 @@ ROOT_FILES = frozenset(
     }
 )
 ALLOWED_DIRECTORIES = frozenset(
-    {".devcontainer", ".github", "app", "custom_components", "standalone", "tests"}
+    {".github", "app", "custom_components", "standalone", "tests"}
 )
 ALLOWED_FILES = frozenset(
     {
@@ -38,7 +38,13 @@ ALLOWED_FILES = frozenset(
         "tools/ha-switchboard-export-public.py",
     }
 )
-EXCLUDED_DIRECTORIES = frozenset({".forgejo"})
+EXCLUDED_DIRECTORIES = frozenset({".devcontainer", ".forgejo"})
+EXCLUDED_FILES = frozenset(
+    {
+        "docs/PUBLIC_REPOSITORY.md",
+        "tools/ha-switchboard-export-public.py",
+    }
+)
 
 
 def tracked_files(root: Path) -> list[PurePosixPath]:
@@ -57,7 +63,7 @@ def is_allowed(path: PurePosixPath) -> bool:
 
 
 def is_excluded(path: PurePosixPath) -> bool:
-    return bool(path.parts and path.parts[0] in EXCLUDED_DIRECTORIES)
+    return bool(path.parts and path.parts[0] in EXCLUDED_DIRECTORIES) or str(path) in EXCLUDED_FILES
 
 
 def export(root: Path, destination: Path) -> list[str]:

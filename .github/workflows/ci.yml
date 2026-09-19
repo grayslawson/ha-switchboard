@@ -27,7 +27,8 @@ jobs:
         run: pytest -q tests
       - name: Check release boundary
         run: python tools/check_release_boundary.py
-      - name: Check public export
+      - name: Verify sanitized public tree
         run: |
-          python tools/ha-switchboard-export-public.py "$RUNNER_TEMP/public"
-          python "$RUNNER_TEMP/public/tools/check_release_boundary.py" --root "$RUNNER_TEMP/public"
+          test ! -e .forgejo
+          test ! -e docs/PUBLIC_REPOSITORY.md
+          test ! -e tools/ha-switchboard-export-public.py

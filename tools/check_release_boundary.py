@@ -13,19 +13,20 @@ PRODUCT_ROOT = Path(__file__).resolve().parents[1]
 TEXT_SUFFIXES = {".py", ".yaml", ".yml", ".json", ".sh", ".txt", ".md", ".toml", ".env"}
 
 FORBIDDEN_TERMS = (
-    "pd-nixos",
-    "possumden",
+    "operator-nixos",
+    "operator-private",
     "kilocli",
     "kilo/",
     "sops",
     "/home/deploy",
     "/etc/nixos",
-    "secrets/homelab",
+    "secrets/private",
+    "operator-network",
     "local-fast",
 )
 PRIVATE_IP = re.compile(r"(?<![\d.])(?:10|192\.168|172\.(?:1[6-9]|2\d|3[0-1]))\.\d{1,3}\.\d{1,3}(?![\d.])")
 ALLOWED_PLATFORM_ADDRESSES = frozenset({"172.30.32.2"})
-FORBIDDEN_IMPORT = re.compile(r"(?:from|import)\s+pd[_-]nixos")
+FORBIDDEN_IMPORT = re.compile(r"(?:from|import)\s+operator[_-]nixos")
 
 
 def _is_private_ip(value: str) -> bool:
@@ -56,7 +57,7 @@ def violations(root: Path = PRODUCT_ROOT) -> list[str]:
                 if term in lowered:
                     findings.append(f"{path.relative_to(root)} contains forbidden term {term!r}")
             if FORBIDDEN_IMPORT.search(text):
-                findings.append(f"{path.relative_to(root)} imports pd-nixos")
+                findings.append(f"{path.relative_to(root)} imports operator-nixos")
             for match in PRIVATE_IP.finditer(text):
                 if _is_private_ip(match.group(0)) and match.group(0) not in ALLOWED_PLATFORM_ADDRESSES:
                     findings.append(f"{path.relative_to(root)} contains private address {match.group(0)!r}")

@@ -19,8 +19,8 @@ COPY --chown=65532:65532 data/.keep /data/.keep
 
 # Use a numeric unprivileged identity so the same Dockerfile can be assembled
 # for amd64 and arm64 without executing target-architecture binaries during
-# the private Forgejo build. The base image's /bin/sh runs natively at App
-# startup on the user's Home Assistant host.
+# the multi-architecture CI build. The base image's /bin/sh runs natively at
+# App startup on the user's Home Assistant host.
 USER 65532:65532
 EXPOSE 8099
 ENTRYPOINT ["/run.sh"]

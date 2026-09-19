@@ -8,9 +8,6 @@ on:
       - "v*"
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 env:
   IMAGE: ghcr.io/grayslawson/ha-switchboard
 

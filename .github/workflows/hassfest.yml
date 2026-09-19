@@ -19,4 +19,4 @@ jobs:
         with:
           persist-credentials: false
       - name: Validate Home Assistant metadata
-        uses: home-assistant/actions/hassfest@58bff37c8947f690ace498be413a9b78d6f30f93f # master
+        uses: home-assistant/actions/hassfest@4b258cf2bf1668d8e0adcb6b2be96b6cda36f42f # 1.0.0
