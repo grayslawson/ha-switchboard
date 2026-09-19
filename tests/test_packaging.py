@@ -17,7 +17,9 @@ def test_app_manifest_declares_portable_least_privilege_defaults() -> None:
     assert "hassio_api: false" in manifest
     assert "host_network: false" in manifest
     assert "privileged: []" in manifest
-    assert "apparmor: \"ha_switchboard\"" in manifest
+    # Supervisor expects this setting to be a boolean. The custom profile name
+    # is taken from app/apparmor.txt and must match the app slug.
+    assert "apparmor: true" in manifest
     assert "ingress: true" in manifest
     assert "backup: hot" in manifest
 
