@@ -6,7 +6,8 @@ ARG BUILD_ARCH
 LABEL \
   io.hass.version="${BUILD_VERSION}" \
   io.hass.type="app" \
-  io.hass.arch="${BUILD_ARCH}"
+  io.hass.arch="${BUILD_ARCH}" \
+  org.opencontainers.image.source="https://github.com/grayslawson/ha-switchboard"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
