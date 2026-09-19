@@ -19,13 +19,15 @@ If `GH_MIRROR_TOKEN` is absent, the mirror job is skipped and the public
 repository is not updated.
 
 Version tags matching `v*` are exported to the public repository as well. The
-public `release.yml` workflow turns those tags into full GitHub Releases, which
-is required for HACS to present versioned integration updates.
+Forgejo mirror workflow creates or updates the corresponding full GitHub
+Release through the GitHub API, which is required for HACS to present
+versioned integration updates. The public repository intentionally has no
+automatic GitHub Actions jobs; Forgejo owns validation, builds, mirroring, and
+release publication.
 
 The App image is built by the private Forgejo workflow on the dedicated
 `ha-switchboard` runner and pushed directly to GHCR. GitHub does not rebuild
-the image; its public workflow only validates the sanitized mirror and creates
-the GitHub Release for a mirrored version tag.
+the image or run release automation.
 
 The public export intentionally excludes `.forgejo/`, private specifications,
 operator notes, homelab configuration, and any future unallowlisted path. A

@@ -8,6 +8,15 @@ from .client import GatewayClient
 from .const import CONF_GATEWAY_TOKEN, CONF_GATEWAY_URL, DEFAULT_GATEWAY_URL
 from .conversation import JevConversationEntity
 
+CONFIG_SCHEMA = None
+
+try:  # pragma: no cover - exercised in the Home Assistant runtime
+    from homeassistant.helpers import config_validation as cv
+
+    CONFIG_SCHEMA = cv.empty_config_schema
+except ImportError:
+    CONFIG_SCHEMA = None
+
 _PLATFORMS = ["conversation"]
 
 

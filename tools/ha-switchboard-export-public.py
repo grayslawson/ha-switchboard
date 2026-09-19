@@ -26,7 +26,7 @@ ROOT_FILES = frozenset(
     }
 )
 ALLOWED_DIRECTORIES = frozenset(
-    {".github", "app", "custom_components", "standalone", "tests"}
+    {"app", "custom_components", "standalone", "tests"}
 )
 ALLOWED_FILES = frozenset(
     {

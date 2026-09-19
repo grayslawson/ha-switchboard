@@ -12,8 +12,8 @@ intentionally independent from any operator's NixOS or Home Assistant setup.
   integration artifact.
 - `standalone/compose.yaml` runs the same gateway image for Home Assistant
   Container users.
-- `hacs.json`, `custom_components/ha_switchboard/`, and the HACS/Hassfest
-  workflows make the Core integration installable as a HACS custom repository.
+- `hacs.json`, `custom_components/ha_switchboard/`, and the Forgejo validation
+  workflow make the Core integration installable as a HACS custom repository.
 
 ## Required checks
 
@@ -30,11 +30,12 @@ of any particular Home Assistant installation, CI host, or private network.
 Registry credentials used by automation must be narrowly scoped to the
 published package and must never be committed to the repository.
 
-Before requesting inclusion in HACS's default catalog, run the HACS and
-Hassfest workflows on GitHub, publish a full GitHub Release (not only a tag),
-and submit the repository to the integration list in `hacs/default`. HACS
-requires the repository to be public on GitHub and a full GitHub Release to be
-available; a tag alone is not sufficient for the normal update flow.
+Before requesting inclusion in HACS's default catalog, pass the HACS and
+Hassfest jobs in Forgejo, publish a full GitHub Release through the Forgejo
+mirror workflow (not only a tag), and submit the repository to the integration
+list in `hacs/default`. HACS requires the repository to be public on GitHub and
+a full GitHub Release to be available; a tag alone is not sufficient for the
+normal update flow.
 
 When Docker/AppArmor is available, use the official Home Assistant Apps test
 harness (or an equivalent local harness), install the local `app/`, and

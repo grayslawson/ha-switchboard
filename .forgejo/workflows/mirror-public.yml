@@ -38,3 +38,46 @@ jobs:
           else
             git -C "$RUNNER_TEMP/public" -c "http.extraheader=AUTHORIZATION: basic ${auth_header}" push --force github HEAD:master
           fi
+      - name: Create or update GitHub release from tag
+        if: ${{ forgejo.ref_type == 'tag' }}
+        env:
+          GH_MIRROR_TOKEN: ${{ secrets.GH_MIRROR_TOKEN }}
+          RELEASE_TAG: ${{ forgejo.ref_name }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          from urllib.error import HTTPError
+          from urllib.parse import quote
+          from urllib.request import Request, urlopen
+
+          token = os.environ["GH_MIRROR_TOKEN"]
+          tag = os.environ["RELEASE_TAG"]
+          base = "https://api.github.com/repos/grayslawson/ha-switchboard"
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": f"Bearer {token}",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
+
+          def request(method: str, url: str, body: dict | None = None):
+              payload = None if body is None else json.dumps(body).encode("utf-8")
+              request = Request(url, data=payload, headers=headers, method=method)
+              with urlopen(request, timeout=30) as response:
+                  return json.loads(response.read())
+
+          try:
+              release = request("GET", f"{base}/releases/tags/{quote(tag, safe='')}")
+          except HTTPError as error:
+              if error.code != 404:
+                  raise
+              request(
+                  "POST",
+                  f"{base}/releases",
+                  {"tag_name": tag, "name": tag, "generate_release_notes": True},
+              )
+              print(f"created GitHub release {tag}")
+          else:
+              print(f"GitHub release already exists: {release['html_url']}")
+          PY
