@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).parents[1]
 
@@ -21,6 +23,8 @@ def test_app_manifest_declares_portable_least_privilege_defaults() -> None:
 
 
 def test_devcontainer_is_development_only() -> None:
+    if not (ROOT / ".devcontainer").exists():
+        pytest.skip("the development-only App harness is private infrastructure")
     config = json.loads((ROOT / ".devcontainer" / "devcontainer.json").read_text(encoding="utf-8"))
     assert config["image"].startswith("ghcr.io/home-assistant/devcontainer:")
     assert "--privileged" in config["runArgs"]

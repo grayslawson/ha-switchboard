@@ -4,14 +4,19 @@ import importlib.util
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from tools import check_release_boundary
 
 
 EXPORTER_PATH = Path(__file__).parents[1] / "tools" / "ha-switchboard-export-public.py"
-EXPORTER_SPEC = importlib.util.spec_from_file_location("ha_switchboard_export_public", EXPORTER_PATH)
-assert EXPORTER_SPEC is not None and EXPORTER_SPEC.loader is not None
-ha_switchboard_export_public = importlib.util.module_from_spec(EXPORTER_SPEC)
-EXPORTER_SPEC.loader.exec_module(ha_switchboard_export_public)
+if EXPORTER_PATH.exists():
+    EXPORTER_SPEC = importlib.util.spec_from_file_location("ha_switchboard_export_public", EXPORTER_PATH)
+    assert EXPORTER_SPEC is not None and EXPORTER_SPEC.loader is not None
+    ha_switchboard_export_public = importlib.util.module_from_spec(EXPORTER_SPEC)
+    EXPORTER_SPEC.loader.exec_module(ha_switchboard_export_public)
+else:
+    ha_switchboard_export_public = None
 
 
 def test_product_release_boundary_is_clean() -> None:
@@ -31,6 +36,8 @@ def test_boundary_rejects_private_runtime_reference(tmp_path: Path) -> None:
 
 
 def test_public_export_omits_private_forgejo_workflows(tmp_path: Path) -> None:
+    if ha_switchboard_export_public is None:
+        pytest.skip("the exporter is private mirror infrastructure")
     source = tmp_path / "source"
     destination = tmp_path / "public"
     (source / ".forgejo" / "workflows").mkdir(parents=True)
