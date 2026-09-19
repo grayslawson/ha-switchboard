@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+test -f app/config.yaml
+test -f app/Dockerfile
+echo "Jev App development fixture is ready. Run supervisor_run to start Home Assistant."

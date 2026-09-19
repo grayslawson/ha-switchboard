@@ -1,0 +1,41 @@
+name: Publish sanitized GitHub mirror
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    if: ${{ secrets.GITHUB_MIRROR_TOKEN != '' }}
+    runs-on: ha-switchboard
+    steps:
+      - name: Check out private source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Export allowlisted public tree
+        run: |
+          python3 tools/ha-switchboard-export-public.py "$RUNNER_TEMP/public"
+          python3 "$RUNNER_TEMP/public/tools/check_release_boundary.py" --root "$RUNNER_TEMP/public"
+      - name: Push public master
+        env:
+          GITHUB_MIRROR_TOKEN: ${{ secrets.GITHUB_MIRROR_TOKEN }}
+        run: |
+          git -C "$RUNNER_TEMP/public" init --initial-branch=master
+          git -C "$RUNNER_TEMP/public" config user.name "ha-switchboard mirror"
+          git -C "$RUNNER_TEMP/public" config user.email "mirror@users.noreply.github.com"
+          git -C "$RUNNER_TEMP/public" add --all
+          git -C "$RUNNER_TEMP/public" commit -m "Mirror Forgejo ${GITHUB_SHA}"
+          git -C "$RUNNER_TEMP/public" remote add github https://github.com/grayslawson/ha-switchboard.git
+          if [ "${GITHUB_REF_TYPE:-branch}" = "tag" ]; then
+            git -C "$RUNNER_TEMP/public" -c "http.extraheader=AUTHORIZATION: bearer ${GITHUB_MIRROR_TOKEN}" push --force github "HEAD:refs/tags/${GITHUB_REF_NAME}"
+          else
+            git -C "$RUNNER_TEMP/public" -c "http.extraheader=AUTHORIZATION: bearer ${GITHUB_MIRROR_TOKEN}" push --force github HEAD:master
+          fi

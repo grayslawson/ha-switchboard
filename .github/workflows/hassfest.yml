@@ -1,0 +1,22 @@
+name: Hassfest validation
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate Home Assistant metadata
+        uses: home-assistant/actions/hassfest@58bff37c8947f690ace498be413a9b78d6f30f93f # master

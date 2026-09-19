@@ -1,0 +1,91 @@
+name: Build and publish Home Assistant App
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/grayslawson/ha-switchboard
+
+jobs:
+  build:
+    name: Build and publish multi-architecture App image
+    runs-on: ha-switchboard
+    steps:
+      - name: Check out exact revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify builder prerequisites
+        run: |
+          set -eu
+          command -v podman
+          command -v python3
+          podman info >/dev/null
+
+      - name: Resolve and verify release version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^version: *"\?\([0-9][0-9.]*\)"\?$/\1/p' app/config.yaml)"
+          test -n "$version"
+          if [[ "${FORGEJO_REF_TYPE:-branch}" == "tag" ]]; then
+            test "${FORGEJO_REF_NAME#v}" = "$version"
+          fi
+          printf 'value=%s\n' "$version" >> "$FORGEJO_OUTPUT"
+
+      - name: Log in to GitHub Container Registry
+        env:
+          GHCR_USERNAME: grayslawson
+          GHCR_TOKEN: ${{ secrets.GITHUB_PACKAGE_TOKEN }}
+        run: |
+          set -eu
+          test -n "$GHCR_TOKEN"
+          printf '%s' "$GHCR_TOKEN" | podman login ghcr.io \
+            --username "$GHCR_USERNAME" --password-stdin
+
+      - name: Build amd64 and arm64 images
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          set -eu
+          manifest="localhost/ha-switchboard:${VERSION}"
+          podman manifest rm "$manifest" >/dev/null 2>&1 || true
+          podman manifest create "$manifest"
+          for arch in amd64 arm64; do
+            podman build \
+              --platform "linux/${arch}" \
+              --manifest "$manifest" \
+              --build-arg "BUILD_VERSION=${VERSION}" \
+              --build-arg "BUILD_ARCH=${arch}" \
+              app
+          done
+
+      - name: Push versioned multi-architecture image
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          set -eu
+          podman manifest push --all \
+            "localhost/ha-switchboard:${VERSION}" \
+            "docker://${IMAGE}:${VERSION}"
+
+      - name: Push latest multi-architecture image from master
+        if: ${{ forgejo.ref == 'refs/heads/master' }}
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          set -eu
+          podman manifest push --all \
+            "localhost/ha-switchboard:${VERSION}" \
+            "docker://${IMAGE}:latest"

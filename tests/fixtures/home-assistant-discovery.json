@@ -1,0 +1,66 @@
+{
+  "installation_key": "fixture-installation",
+  "entities": [
+    {
+      "entity_id": "light.living_room",
+      "name": "Living room lights",
+      "domain": "light",
+      "area": "Living room",
+      "aliases": ["living room light", "lounge lights"],
+      "exposed": true,
+      "available": true,
+      "operations": ["turn_on", "turn_off", "toggle", "set_brightness"]
+    },
+    {
+      "entity_id": "light.living_room_lamp",
+      "name": "Living room lamp",
+      "domain": "light",
+      "area": "Living room",
+      "aliases": ["living room light"],
+      "exposed": true,
+      "available": true,
+      "operations": ["turn_on", "turn_off", "toggle"]
+    },
+    {
+      "entity_id": "switch.coffee",
+      "name": "Coffee machine",
+      "domain": "switch",
+      "area": "Kitchen",
+      "exposed": true,
+      "available": false,
+      "operations": ["turn_on", "turn_off", "toggle"]
+    },
+    {
+      "entity_id": "lock.front_door",
+      "name": "Front door",
+      "domain": "lock",
+      "area": "Entry",
+      "exposed": true,
+      "available": true,
+      "risk_class": "confirm",
+      "operations": ["lock", "unlock"]
+    },
+    {
+      "entity_id": "climate.downstairs",
+      "name": "Downstairs thermostat",
+      "domain": "climate",
+      "area": "Downstairs",
+      "exposed": true,
+      "available": true,
+      "operations": ["set_temperature", "set_hvac_mode"]
+    }
+  ],
+  "devices": [],
+  "organization": {"areas": ["Living room", "Kitchen", "Entry", "Downstairs"]},
+  "exposure": ["light.living_room", "light.living_room_lamp", "switch.coffee", "lock.front_door", "climate.downstairs"],
+  "services": [
+    {"domain": "light", "operations": ["turn_on", "turn_off", "toggle", "set_brightness"]},
+    {"domain": "switch", "operations": ["turn_on", "turn_off", "toggle"]},
+    {"domain": "climate", "operations": ["set_temperature", "set_hvac_mode"]}
+  ],
+  "routines": [
+    {"entity_id": "script.goodnight", "name": "Good night", "kind": "script", "exposed": true}
+  ],
+  "assist_surfaces": [{"kind": "assist_pipeline", "name": "Fixture Assist"}],
+  "compatibility": [{"kind": "browser_satellite", "trust": "community", "supported": true}]
+}

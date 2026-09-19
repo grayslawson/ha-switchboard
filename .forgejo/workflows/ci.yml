@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ha-switchboard
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install test tools
+        run: python -m pip install --upgrade pytest
+      - name: Compile Python
+        run: python -m compileall app/ha_switchboard custom_components/ha_switchboard tools
+      - name: Run tests
+        run: pytest -q tests
+      - name: Check release boundary
+        run: python tools/check_release_boundary.py
+      - name: Check public export
+        run: |
+          python tools/ha-switchboard-export-public.py "$RUNNER_TEMP/public"
+          python "$RUNNER_TEMP/public/tools/check_release_boundary.py" --root "$RUNNER_TEMP/public"

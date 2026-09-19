@@ -1,0 +1,13 @@
+{
+  "local-reasoner": {
+    "kind": "prose_response",
+    "handoff_id": "handoff-fixture",
+    "text": "Check the current humidity sensor and confirm the dehumidifier is running."
+  },
+  "invalid-service-json": {
+    "kind": "tool_proposal",
+    "handoff_id": "handoff-fixture",
+    "service": "light.turn_on",
+    "service_data": {"entity_id": "light.secret"}
+  }
+}
