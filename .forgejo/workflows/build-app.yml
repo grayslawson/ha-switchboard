@@ -28,9 +28,11 @@ jobs:
       - name: Verify builder prerequisites
         run: |
           set -eu
+          runner_home="$(getent passwd "$(id -u)" | cut -d: -f6)"
+          export HOME="$runner_home"
           command -v podman
           command -v python3
-          podman info >/dev/null
+          podman info
 
       - name: Resolve and verify release version
         id: version
