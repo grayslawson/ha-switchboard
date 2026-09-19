@@ -10,7 +10,7 @@ on:
 
 jobs:
   mirror:
-    if: ${{ secrets.GITHUB_MIRROR_TOKEN != '' }}
+    if: ${{ secrets.GH_MIRROR_TOKEN != '' }}
     runs-on: ha-switchboard
     steps:
       - name: Check out private source
@@ -23,7 +23,7 @@ jobs:
           python3 "$RUNNER_TEMP/public/tools/check_release_boundary.py" --root "$RUNNER_TEMP/public"
       - name: Push public master
         env:
-          GITHUB_MIRROR_TOKEN: ${{ secrets.GITHUB_MIRROR_TOKEN }}
+          GH_MIRROR_TOKEN: ${{ secrets.GH_MIRROR_TOKEN }}
         run: |
           git -C "$RUNNER_TEMP/public" init --initial-branch=master
           git -C "$RUNNER_TEMP/public" config user.name "ha-switchboard mirror"
@@ -32,7 +32,7 @@ jobs:
           git -C "$RUNNER_TEMP/public" commit -m "Mirror Forgejo ${GITHUB_SHA}"
           git -C "$RUNNER_TEMP/public" remote add github https://github.com/grayslawson/ha-switchboard.git
           if [ "${GITHUB_REF_TYPE:-branch}" = "tag" ]; then
-            git -C "$RUNNER_TEMP/public" -c "http.extraheader=AUTHORIZATION: bearer ${GITHUB_MIRROR_TOKEN}" push --force github "HEAD:refs/tags/${GITHUB_REF_NAME}"
+            git -C "$RUNNER_TEMP/public" -c "http.extraheader=AUTHORIZATION: bearer ${GH_MIRROR_TOKEN}" push --force github "HEAD:refs/tags/${GITHUB_REF_NAME}"
           else
-            git -C "$RUNNER_TEMP/public" -c "http.extraheader=AUTHORIZATION: bearer ${GITHUB_MIRROR_TOKEN}" push --force github HEAD:master
+            git -C "$RUNNER_TEMP/public" -c "http.extraheader=AUTHORIZATION: bearer ${GH_MIRROR_TOKEN}" push --force github HEAD:master
           fi
