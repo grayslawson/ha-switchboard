@@ -1,0 +1,8 @@
+[
+  {"name": "routine", "utterance": "turn on the living room lights", "expected": "execute"},
+  {"name": "ambiguous", "utterance": "turn on the living room light", "expected": "clarify"},
+  {"name": "high_risk", "utterance": "unlock the front door", "expected": "confirm"},
+  {"name": "unavailable", "utterance": "turn on the coffee machine", "expected": "refuse"},
+  {"name": "open_ended", "utterance": "what should I do about damp air", "expected": "answer"},
+  {"name": "stale", "utterance": "turn on the lights after a registry update", "expected": "refuse"}
+]
