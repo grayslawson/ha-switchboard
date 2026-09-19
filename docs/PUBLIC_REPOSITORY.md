@@ -8,11 +8,15 @@ Action in `.forgejo/workflows/mirror-public.yml` exports only the allowlisted
 release tree, runs the release-boundary checker, and then updates GitHub's
 `master`. It does not push the private repository history or unknown files.
 
-Configure a narrowly scoped GitHub fine-grained token as the Forgejo secret
-`GITHUB_MIRROR_TOKEN`, with contents write access only to
-`grayslawson/ha-switchboard`. Do not use a token in source, workflow text,
-fixtures, or logs. If the secret is absent, the mirror job is skipped and the
-public repository is not updated.
+Configure these repository Action secrets in Forgejo; do not use a token in
+source, workflow text, fixtures, or logs:
+
+- `GH_PACKAGE_TOKEN` authenticates the private App build to GHCR.
+- `GH_MIRROR_TOKEN` is a narrowly scoped GitHub token with contents write
+  access only to `grayslawson/ha-switchboard`.
+
+If `GH_MIRROR_TOKEN` is absent, the mirror job is skipped and the public
+repository is not updated.
 
 Version tags matching `v*` are exported to the public repository as well. The
 public `release.yml` workflow turns those tags into full GitHub Releases, which
