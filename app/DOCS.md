@@ -56,10 +56,12 @@ Home Assistant capability profile, or execute Home Assistant actions.
 
 For the complete Assist flow, install the Core integration through HACS or
 copy `custom_components/ha_switchboard/` manually—even when Home Assistant is
-running as Home Assistant OS. HACS manages the Core integration only; it does
-not install or update this App. Home Assistant Container users cannot install
-the Supervisor App and should use the standalone Compose deployment plus the
-same Core integration.
+running as Home Assistant OS. HACS itself manages Core custom integrations,
+not Supervisor Apps. On Home Assistant OS/Supervised, HACS provides a separate
+one-shot **Get HACS** App that bootstraps the HACS integration; it can be
+stopped or removed after the download completes. That bootstrapper is not the
+Switchboard App. Home Assistant Container users cannot install Supervisor Apps
+and should use the standalone Compose deployment plus the same Core integration.
 
 ## App options: what to enter
 

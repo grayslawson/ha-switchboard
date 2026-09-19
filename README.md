@@ -57,7 +57,7 @@ If Jev selects `delegate`, Switchboard chooses an eligible downstream route by p
 | Wyoming, ESPHome, voice satellites, and STT/TTS | Keep using the existing voice pipeline. Those surfaces feed Home Assistant; Switchboard operates behind the conversation layer. |
 | Dashboards and companion apps | Keep using existing cards, dashboards, and apps. Text can continue to enter Home Assistant's conversation surface. |
 | Home Assistant Container | Run the same gateway image with `standalone/compose.yaml`; connect it to a separately managed Home Assistant instance. |
-| HACS | HACS manages only `custom_components/ha_switchboard/`. It does not install or update the Supervisor App. |
+| HACS | HACS is a custom-integration store. On Home Assistant OS/Supervised, its separate `Get HACS` App is a one-shot bootstrapper that installs the HACS integration; HACS itself does not manage Supervisor Apps. |
 
 Switchboard is not a dashboard, wake-word engine, STT engine, TTS engine, Wyoming server, or replacement for Home Assistant Assist.
 
@@ -68,7 +68,7 @@ The App and Core integration are intentionally separate artifacts.
 1. In **Settings → Add-ons → Add-on store**, open the three-dot menu and add the App repository: [`https://github.com/grayslawson/ha-switchboard`](https://github.com/grayslawson/ha-switchboard).
 2. Install **HA Switchboard**, start it, and open its Web UI if desired.
 3. Configure the App using the complete [App configuration guide](app/DOCS.md). For the current release, use `adapter_only`, set `ingress_only` to `false` when the Core integration will call `http://ha-switchboard:8099` directly, leave the Jev fields blank unless you have a Switchboard-compatible Jev service, set `profile_refresh_minutes` to `15`, and use `local_only` privacy mode.
-4. If you want the full Conversation/Assist path, install the separate Core integration using HACS or a manual copy. HACS is not needed for the App itself.
+4. If you want the full Conversation/Assist path, install the separate Core integration using HACS or a manual copy. HACS is not needed for the Switchboard App itself. On Home Assistant OS/Supervised, HACS's separate **Get HACS** App is only a one-shot bootstrapper for installing HACS; it is not the Switchboard App.
 5. In **Settings → Devices & services → Add integration**, add **HA Switchboard** and enter the gateway URL and the same optional gateway token.
 6. Select the resulting Switchboard conversation agent in the Assist pipeline you want to use.
 
@@ -256,6 +256,40 @@ tools/local-dev.sh logs
 # After changing app/**:
 tools/local-dev.sh rebuild
 ```
+
+The local harness can also exercise the same [HACS OS/Supervised download
+flow](https://www.hacs.xyz/docs/use/download/download/) used on Home Assistant
+OS/Supervised. `install-hacs` adds HACS's official App repository, installs and
+runs the one-shot `Get HACS` App, waits for it to write HACS into the disposable
+Home Assistant config, and restarts Core. This is layered on the official
+[Home Assistant local app testing](https://developers.home-assistant.io/docs/apps/testing/)
+devcontainer flow:
+
+```bash
+tools/local-dev.sh install-hacs
+```
+
+Then open `http://localhost:7123/`, clear the browser cache if needed, and use
+`Settings -> Devices & services -> Add integration` to configure HACS with the
+GitHub device-auth flow. In HACS, add
+`https://github.com/grayslawson/ha-switchboard` as a custom repository of type
+`Integration`, then install `HA Switchboard` from HACS. HACS downloads
+integrations into the Core config's `custom_components/` directory; it does not
+install or update the Switchboard Supervisor App.
+
+For fast iteration on the current checkout, use the explicit local sync after
+the HACS setup:
+
+```bash
+tools/local-dev.sh sync-integration
+```
+
+That copies the current worktree's `custom_components/ha_switchboard/` into the
+disposable Core config and restarts Core. It is intentionally separate from
+HACS: it tests the current unpushed source, while the HACS UI flow tests the
+published repository/release artifact. The HACS bootstrap App can be stopped
+or uninstalled after it completes; HACS remains installed as a Core
+integration.
 
 Stop the local harness with `tools/local-dev.sh down`; remove its disposable
 copy with `tools/local-dev.sh clean`. The release manifest and published-image
