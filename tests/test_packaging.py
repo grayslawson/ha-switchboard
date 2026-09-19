@@ -22,6 +22,19 @@ def test_app_manifest_declares_portable_least_privilege_defaults() -> None:
     assert "apparmor: true" in manifest
     assert "ingress: true" in manifest
     assert "backup: hot" in manifest
+    assert "ingress_only: true" in manifest
+    assert "ingress_only: bool" in manifest
+
+
+def test_app_entrypoint_is_executable_under_custom_apparmor_profile() -> None:
+    dockerfile = (ROOT / "app" / "Dockerfile").read_text(encoding="utf-8")
+    apparmor = (ROOT / "app" / "apparmor.txt").read_text(encoding="utf-8")
+    entrypoint = ROOT / "app" / "run.sh"
+
+    assert entrypoint.stat().st_mode & 0o111
+    assert "RUN chmod 0555 /run.sh" in dockerfile
+    for rule in ("/run.sh rix", "/bin/sh rix", "/bin/busybox rix", "/usr/local/bin/python3 rix"):
+        assert rule in apparmor
 
 
 def test_devcontainer_is_development_only() -> None:

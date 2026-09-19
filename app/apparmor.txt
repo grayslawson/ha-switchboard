@@ -10,8 +10,15 @@ profile ha_switchboard flags=(attach_disconnected,mediate_deleted) {
   network inet6 stream,
   network inet6 dgram,
 
-  /usr/local/bin/python3 mr,
-  /usr/local/bin/python3.* mr,
+  # The container entrypoint is a shell script. These rules are required even
+  # though the image runs as an unprivileged user: AppArmor is evaluated before
+  # the shell can read the script, which otherwise surfaces as
+  # "/bin/sh: can't open '/run.sh': Permission denied".
+  /run.sh rix,
+  /bin/sh rix,
+  /bin/busybox rix,
+  /usr/local/bin/python3 rix,
+  /usr/local/bin/python3.* rix,
   /app/** rix,
   /data/ r,
   /data/** rwk,

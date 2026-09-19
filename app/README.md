@@ -9,5 +9,9 @@ companion `custom_components/ha_switchboard` integration separately in Home
 Assistant Core. The App is not a replacement for Home Assistant Assist,
 Wyoming/ESPHome satellites, dashboards, or existing conversation agents.
 
+For the complete option-by-option setup guide, gateway-token explanation,
+OpenRouter/Jev compatibility note, security model, and troubleshooting, read
+[`DOCS.md`](DOCS.md).
+
 The project is licensed under Apache 2.0. See the repository `LICENSE` file
 for the complete terms.

@@ -1,5 +1,5 @@
 name: "HA Switchboard"
-version: "0.1.0"
+version: "0.1.1"
 slug: "ha_switchboard"
 description: "Portable Jev-backed decision gateway for Home Assistant"
 url: "https://github.com/grayslawson/ha-switchboard"
@@ -25,6 +25,7 @@ privileged: []
 devices: []
 map: []
 options:
+  ingress_only: true
   gateway_mode: "adapter_only"
   jev_endpoint: ""
   jev_api_key: ""
@@ -32,6 +33,7 @@ options:
   profile_refresh_minutes: 15
   privacy_mode: "local_only"
 schema:
+  ingress_only: bool
   gateway_mode: "list(adapter_only|supervisor_read_only)"
   jev_endpoint: "url?"
   jev_api_key: "password"
