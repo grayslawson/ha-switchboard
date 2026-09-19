@@ -27,7 +27,6 @@ map: []
 options:
   ingress_only: true
   gateway_mode: "adapter_only"
-  jev_endpoint: ""
   jev_api_key: ""
   gateway_token: ""
   profile_refresh_minutes: 15

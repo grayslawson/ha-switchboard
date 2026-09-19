@@ -68,15 +68,18 @@ The App and Core integration are intentionally separate artifacts.
 1. In **Settings → Add-ons → Add-on store**, open the three-dot menu and add the App repository: [`https://github.com/grayslawson/ha-switchboard`](https://github.com/grayslawson/ha-switchboard).
 2. Install **HA Switchboard**, start it, and open its Web UI if desired.
 3. Configure the App using the complete [App configuration guide](app/DOCS.md). For the current release, use `adapter_only`, set `ingress_only` to `false` when the Core integration will call `http://ha-switchboard:8099` directly, leave the Jev fields blank unless you have a Switchboard-compatible Jev service, set `profile_refresh_minutes` to `15`, and use `local_only` privacy mode.
-4. Install the Core integration using the HACS instructions below.
+4. If you want the full Conversation/Assist path, install the separate Core integration using HACS or a manual copy. HACS is not needed for the App itself.
 5. In **Settings → Devices & services → Add integration**, add **HA Switchboard** and enter the gateway URL and the same optional gateway token.
 6. Select the resulting Switchboard conversation agent in the Assist pipeline you want to use.
 
 The App uses Supervisor ingress on port `8099`, stores its data under `/data`, and is declared for `amd64` and `aarch64`. It does not copy the integration into `custom_components` for you.
 
-## Install the HACS integration
+## Install the Core integration (optional for App-only use)
 
-Until the integration is accepted into HACS's default catalog, add [`grayslawson/ha-switchboard`](https://github.com/grayslawson/ha-switchboard) as a HACS **Integration** custom repository, or use the [HACS repository link](https://my.home-assistant.io/redirect/hacs_repository/?owner=grayslawson&repository=ha-switchboard&category=integration).
+HACS is not required to install or run the Supervisor App. It is one way to
+install the separate `ha_switchboard` Core integration, which is required only
+for the full Conversation/Assist path. Until that integration is accepted into
+HACS's default catalog, add [`grayslawson/ha-switchboard`](https://github.com/grayslawson/ha-switchboard) as a HACS **Integration** custom repository, or install `custom_components/ha_switchboard/` manually.
 
 Install **HA Switchboard**, restart Home Assistant, and add it from **Settings → Devices & services → Add integration**. The integration stores the gateway URL and token in a Home Assistant config entry; do not put either value in YAML committed to source control.
 
@@ -114,7 +117,7 @@ guide is in [app/DOCS.md](app/DOCS.md).
 | --- | --- |
 | `ingress_only` | `true` accepts only Supervisor ingress (`172.30.32.2`). Set `false` only for direct Core/adapter calls, which then require `gateway_token`. |
 | `gateway_mode` | Use `adapter_only`. `supervisor_read_only` is reserved for the separately reviewed read-only adapter path. |
-| `jev_endpoint` | Leave blank unless the service implements Switchboard's typed Jev contract. The current App cannot use OpenRouter directly. |
+| `jev_endpoint` | Leave unset unless the service implements Switchboard's typed Jev contract. The current App cannot use OpenRouter directly. |
 | `jev_api_key` | Credential for the configured Jev service; leave blank with no endpoint. This is not the gateway token. |
 | `gateway_token` | A long random bearer token for the Core integration and other direct callers. Use the same value in the Integration configuration. |
 | `profile_refresh_minutes` | Use `15`; accepted range is 1–1440. This option does not yet create automatic Home Assistant discovery. |
@@ -231,10 +234,48 @@ Planned work includes richer Home Assistant discovery and change subscriptions, 
 
 ## Development
 
-Use the official Home Assistant Apps devcontainer or an equivalent local
-harness when validating the Supervisor App. The public release does not need
-to ship that development-only harness; it includes the source, tests, and
-packaging checks instead.
+Use the official Home Assistant Apps devcontainer for the Supervisor/App loop.
+The checked-in `.devcontainer/` configuration runs Supervisor and Home
+Assistant locally, with AppArmor enabled when the host kernel supports it.
+The repository also includes `.vscode/tasks.json` for starting Supervisor,
+installing the local App, rebuilding it, and following its logs.
+
+For a release-safe local build without editing `app/config.yaml`, use the
+wrapper below. It copies the worktree to a disposable staging directory,
+comments out only the staged `image:` setting (the Home Assistant local-build
+requirement), and builds `local_ha_switchboard` under Supervisor:
+
+```bash
+tools/local-dev.sh up
+tools/local-dev.sh start-ha
+# In another terminal:
+tools/local-dev.sh wait
+tools/local-dev.sh install
+tools/local-dev.sh e2e
+tools/local-dev.sh logs
+# After changing app/**:
+tools/local-dev.sh rebuild
+```
+
+Stop the local harness with `tools/local-dev.sh down`; remove its disposable
+copy with `tools/local-dev.sh clean`. The release manifest and published-image
+configuration in the real worktree are never modified by this flow.
+
+With the harness running, open Home Assistant at
+`http://localhost:7123/`. The devcontainer maps host port `7123` to the local
+Core web server on container port `80`; mapping it to Supervisor's `8123`
+endpoint returns a redirect to `http://localhost/` instead of the onboarding
+page. The Supervisor observer remains available at `http://localhost:7357/`.
+The first run presents Home Assistant's normal onboarding flow. Complete it
+only with throwaway local credentials if you want to use the UI; this instance
+is disposable and is separate from any production Home Assistant account.
+`tools/local-dev.sh e2e` checks Supervisor readiness, both local web endpoints,
+the App's `started` state, and the gateway health path from the Supervisor
+network source address.
+
+Run the fast local checks with `tools/local-dev.sh check`. The public release
+does not need to ship the development-only harness; it includes the source,
+tests, and packaging checks instead.
 
 Run the fast local checks:
 

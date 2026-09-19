@@ -1,0 +1,52 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Start Home Assistant",
+      "type": "shell",
+      "command": "supervisor_run",
+      "group": { "kind": "test", "isDefault": true },
+      "presentation": { "reveal": "always", "panel": "new" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Refresh Local Apps",
+      "type": "shell",
+      "command": "ha store reload && ha store info --raw-json | jq '.data.addons[] | select(.slug == \"local_ha_switchboard\")'",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Install Local HA Switchboard",
+      "type": "shell",
+      "command": "ha apps install local_ha_switchboard && ha apps start local_ha_switchboard",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Start Local HA Switchboard",
+      "type": "shell",
+      "command": "ha apps start local_ha_switchboard",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Rebuild and Restart Local HA Switchboard",
+      "type": "shell",
+      "command": "ha apps rebuild --force local_ha_switchboard && ha apps restart local_ha_switchboard",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Follow Local HA Switchboard Logs",
+      "type": "shell",
+      "command": "ha apps logs -f local_ha_switchboard",
+      "presentation": { "reveal": "always", "panel": "new" },
+      "problemMatcher": []
+    }
+  ]
+}

@@ -47,6 +47,20 @@ The App's **Open Web UI** button uses Supervisor ingress. Ingress authenticates
 the Home Assistant user; it is separate from the Core integration's direct
 HTTP calls to the gateway.
 
+## App versus Core integration
+
+The Supervisor App and the `ha_switchboard` Core integration are separate
+artifacts. Installing the App alone is enough to run and test the gateway
+behind Supervisor ingress. It does not add a Conversation entity, reconcile a
+Home Assistant capability profile, or execute Home Assistant actions.
+
+For the complete Assist flow, install the Core integration through HACS or
+copy `custom_components/ha_switchboard/` manually—even when Home Assistant is
+running as Home Assistant OS. HACS manages the Core integration only; it does
+not install or update this App. Home Assistant Container users cannot install
+the Supervisor App and should use the standalone Compose deployment plus the
+same Core integration.
+
 ## App options: what to enter
 
 This is the safe starting configuration for the currently published `0.1.x`
@@ -56,7 +70,7 @@ implementation:
 | --- | --- | --- |
 | `ingress_only` | `true` for ingress-only use; `false` for direct Core/adapter calls | When `true`, only Supervisor's ingress source is accepted. Set it to `false` only when the Core integration or another adapter must call the internal gateway URL directly; direct callers then need `gateway_token`. |
 | `gateway_mode` | `adapter_only` | The normal mode. The Core integration or another adapter supplies sanitized profiles and owns Home Assistant execution. `supervisor_read_only` is reserved for a separately reviewed read-only adapter path. |
-| `jev_endpoint` | Leave blank unless you have a Switchboard-compatible Jev service | The complete HTTP URL of a service implementing Switchboard's typed Jev contract. The current App does not accept an OpenRouter URL directly; see [OpenRouter](#openrouter-and-jev) below. |
+| `jev_endpoint` | Leave unset unless you have a Switchboard-compatible Jev service | The complete HTTP URL of a service implementing Switchboard's typed Jev contract. The current App does not accept an OpenRouter URL directly; see [OpenRouter](#openrouter-and-jev) below. Because this is an optional URL, do not save an empty string in raw App options. |
 | `jev_api_key` | Leave blank when `jev_endpoint` is blank | The API key for the configured Jev service. This is sent as a Bearer credential to that service and is not the gateway token. Do not put it in documentation, YAML committed to Git, logs, or screenshots. |
 | `gateway_token` | A long random value | Bearer credential used by the Core integration to call the protected gateway endpoints. Use the exact same value in the HA Switchboard Integration configuration. |
 | `profile_refresh_minutes` | `15` | Intended refresh interval for profile maintenance. In `0.1.x`, this does not create automatic Home Assistant discovery; the adapter still has to reconcile a complete profile. |
@@ -69,7 +83,6 @@ do not paste a real secret into a public issue or README:
 ```yaml
 ingress_only: true
 gateway_mode: adapter_only
-jev_endpoint: ""
 jev_api_key: ""
 gateway_token: "<long-random-token>"
 profile_refresh_minutes: 15
@@ -83,7 +96,6 @@ that direct calls are accepted and protected by the shared gateway token:
 ```yaml
 ingress_only: false
 gateway_mode: adapter_only
-jev_endpoint: ""
 jev_api_key: ""
 gateway_token: "<the-same-long-random-token-used-in-the-integration>"
 profile_refresh_minutes: 15

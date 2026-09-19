@@ -24,6 +24,8 @@ def test_app_manifest_declares_portable_least_privilege_defaults() -> None:
     assert "backup: hot" in manifest
     assert "ingress_only: true" in manifest
     assert "ingress_only: bool" in manifest
+    options = manifest.split("options:", 1)[1].split("schema:", 1)[0]
+    assert "jev_endpoint:" not in options
 
 
 def test_app_entrypoint_is_executable_under_custom_apparmor_profile() -> None:
@@ -49,6 +51,7 @@ def test_devcontainer_is_development_only() -> None:
     config = json.loads((ROOT / ".devcontainer" / "devcontainer.json").read_text(encoding="utf-8"))
     assert config["image"].startswith("ghcr.io/home-assistant/devcontainer:")
     assert "--privileged" in config["runArgs"]
+    assert "7123:80" in config["appPort"]
     manifest = (ROOT / "app" / "config.yaml").read_text(encoding="utf-8")
     assert "--privileged" not in manifest
 
