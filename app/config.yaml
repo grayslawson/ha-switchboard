@@ -1,0 +1,44 @@
+name: "HA Switchboard"
+version: "0.1.2"
+slug: "ha_switchboard"
+description: "Portable Jev-backed decision gateway for Home Assistant"
+url: "https://github.com/grayslawson/ha-switchboard"
+arch:
+  - amd64
+  - aarch64
+startup: application
+boot: auto
+init: false
+image: "ghcr.io/grayslawson/ha-switchboard"
+ingress: true
+ingress_port: 8099
+ingress_entry: "/"
+ingress_stream: false
+panel_icon: "mdi:robot-outline"
+panel_title: "HA Switchboard"
+panel_admin: true
+apparmor: true
+homeassistant_api: false
+hassio_api: false
+host_network: false
+privileged: []
+devices: []
+map: []
+options:
+  ingress_only: true
+  gateway_mode: "adapter_only"
+  jev_endpoint: ""
+  jev_api_key: ""
+  gateway_token: ""
+  profile_refresh_minutes: 15
+  privacy_mode: "local_only"
+schema:
+  ingress_only: bool
+  gateway_mode: "list(adapter_only|supervisor_read_only)"
+  jev_endpoint: "url?"
+  jev_api_key: "password"
+  gateway_token: "password"
+  profile_refresh_minutes: "int(1,1440)"
+  privacy_mode: "list(local_only|jev_hosted_allowed|hosted_allowed)"
+backup: hot
+stage: experimental
