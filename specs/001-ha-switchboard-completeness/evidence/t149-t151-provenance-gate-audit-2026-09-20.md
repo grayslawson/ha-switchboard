@@ -36,7 +36,7 @@ publish, or alter any external object.
 
 The authoritative worktree is at
 `/home/deploy/.local/state/pd-nixos/worktrees/ha-switchboard-ci-hardening`,
-branch `codex/fix-apparmor-runtime`, candidate `HEAD`
+branch `codex/fix-apparmor-runtime`, source-bearing candidate
 `d513f5ef89333e338ddb4a49306c8b97e6f3b2dc`.
 
 The existing sanitized read-only evidence records that:

@@ -10,8 +10,8 @@ tagged, published, logged into, or mutated.
 
 - Worktree: `/home/deploy/.local/state/pd-nixos/worktrees/ha-switchboard-ci-hardening`.
 - Branch: `codex/fix-apparmor-runtime`.
-- Local `HEAD`: `d513f5ef89333e338ddb4a49306c8b97e6f3b2dc`.
-- Local subject: `feat: complete HA Switchboard control layer`.
+- Local source candidate at collection: `d513f5ef89333e338ddb4a49306c8b97e6f3b2dc`.
+- A later local-only evidence reconciliation commit contains no source/image changes.
 - Coordinated local version declarations: App `0.2.0`, Python package `0.2.0`,
   and Core manifest `0.2.0`.
 - The worktree was already dirty across workflows, source, tests, and specs;
@@ -24,7 +24,7 @@ tagged, published, logged into, or mutated.
 
 | Check | Result | Exact command and sanitized result |
 | --- | --- | --- |
-| Local branch and revision | observed | `git status --short --branch && git rev-parse HEAD && git log -1 --format='%H%n%ad%n%s' --date=iso-strict && git branch --show-current` — branch `codex/fix-apparmor-runtime`; `HEAD=d513f5ef89333e338ddb4a49306c8b97e6f3b2dc`; commit time `2026-09-20T17:06:09-04:00`; subject as above. |
+| Local branch and revision | observed | The source-bearing candidate was `d513f5ef89333e338ddb4a49306c8b97e6f3b2dc`; the current branch may contain a later evidence-only descendant. |
 | Local protected-tip ancestry | passed locally | `git merge-base --is-ancestor HEAD 59eba81fe84ba31cfb772f5e79ccbdd829ad3b36` — exit `0`. This is only local object ancestry, not public-mirror proof. |
 | Local version metadata | passed | `rg -n '^(version:|  version:)|"version"|version\\s*=' app/config.yaml pyproject.toml custom_components/ha_switchboard/manifest.json app/CHANGELOG.md` — App, Python, and Core declarations each reported `0.2.0`. |
 

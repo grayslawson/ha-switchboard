@@ -228,9 +228,10 @@ full provider responses in the evidence record.
 
 ## Observed source evidence for this pass
 
-- Worktree: `codex/fix-apparmor-runtime`, candidate commit
-  `d513f5ef89333e338ddb4a49306c8b97e6f3b2dc`; the implementation and spec
-  changes are committed locally, while external publication gates remain open.
+- Worktree: `codex/fix-apparmor-runtime`, source-bearing candidate commit
+  `d513f5ef89333e338ddb4a49306c8b97e6f3b2dc`; a later local-only evidence
+  reconciliation commit contains no source/image changes. External
+  publication gates remain open.
 - Coordinated source version: `0.2.0` in the App config/image metadata, gateway
   package, Core manifest, and changelog.
 - Local source checks: `python3 -m compileall -q app/ha_switchboard
