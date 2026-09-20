@@ -1,0 +1,17 @@
+.git
+.devcontainer
+tests
+tools
+custom_components
+*.pyc
+__pycache__
+.pytest_cache
+.venv
+venv
+.env
+.env.*
+secrets
+*.sops.yaml
+*.age
+*.key
+*.pem

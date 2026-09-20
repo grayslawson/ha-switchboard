@@ -1,0 +1,31 @@
+{
+  "routine_light": {
+    "route": "routine_control",
+    "complexity": "simple",
+    "capability_id": "capability-placeholder",
+    "confidence": 0.98,
+    "ambiguity": 0.01,
+    "risk": "routine",
+    "requires_confirmation": false,
+    "reason": "unique exposed light"
+  },
+  "ambiguous": {
+    "route": "routine_control",
+    "complexity": "simple",
+    "capability_id": "capability-placeholder",
+    "confidence": 0.91,
+    "ambiguity": 0.75,
+    "risk": "routine",
+    "requires_confirmation": false,
+    "reason": "two matching aliases"
+  },
+  "delegated": {
+    "route": "delegate",
+    "complexity": "reasoning",
+    "confidence": 0.93,
+    "ambiguity": 0.02,
+    "risk": "read_only",
+    "requires_confirmation": false,
+    "reason": "open ended reasoning"
+  }
+}

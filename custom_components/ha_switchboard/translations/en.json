@@ -1,0 +1,37 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect HA Switchboard",
+        "description": "Enter the gateway URL and the gateway token configured in the HA Switchboard App.",
+        "data": {
+          "gateway_url": "Gateway URL",
+          "gateway_token": "Gateway token"
+        }
+      },
+      "confirm": {
+        "title": "Confirm HA Switchboard",
+        "description": "Connect to {gateway_url} and allow Home Assistant Core to maintain its capability profile?",
+        "data": {
+          "confirm": "Connect"
+        }
+      },
+      "hassio_confirm": {
+        "title": "Discovered HA Switchboard",
+        "description": "Home Assistant discovered a gateway at {gateway_url}. Validate it and create the integration entry?",
+        "data": {
+          "confirm": "Use discovered gateway"
+        }
+      }
+    },
+    "error": {
+      "invalid_url": "Enter a valid HTTP or HTTPS gateway URL.",
+      "cannot_connect": "Could not connect to the gateway. Check that it is running and that the gateway token is correct."
+    },
+    "abort": {
+      "already_configured": "This HA Switchboard gateway is already configured.",
+      "invalid_discovery": "The discovered gateway information is incomplete or invalid.",
+      "user_cancelled": "Setup was cancelled."
+    }
+  }
+}
