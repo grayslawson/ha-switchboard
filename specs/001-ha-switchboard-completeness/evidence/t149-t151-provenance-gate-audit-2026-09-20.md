@@ -100,3 +100,45 @@ pinned Hassfest reference was run against the read-only export and passed with
 `Integrations: 1` and `Invalid integrations: 0`. This is local exported-tree
 evidence only; the HACS token/public-repository gate and public release gates
 remain open.
+
+## Current branch provenance refresh — 2026-09-20
+
+The authoritative current branch state is clean at
+`799efc422b372ecc8117336a904e426126889e80` on
+`codex/fix-apparmor-runtime`; its three coordinated version declarations are
+all `0.2.0`. The current public comparison was collected anonymously and
+read-only:
+
+| Fact | Current observation | Gate meaning |
+| --- | --- | --- |
+| GitHub mirror `master` | `086eec897a86b6f143ca63ac3663e1b8148b00e3` | Does not equal current `HEAD`; mirror agreement pending |
+| GitHub tag `v0.2.0` | `42dc7a0ff29ada170075f326f47fe439685ee24c` | Does not equal current `HEAD`; tag agreement pending |
+| GitHub release `v0.2.0` | Non-draft/non-prerelease, published `2026-09-20T02:15:33Z`, zero assets | Existing public release metadata observed, but not a release of current `HEAD` |
+| GHCR `0.2.0` | OCI index `sha256:8ed4ec883608a2d11bee20be8e811f80f3306dce123c11851475722e0f6b58b9`; exactly `amd64` and `arm64` | Public multi-platform manifest readable, but exact artifact match not proven |
+| GHCR OCI revision labels | `59eba81fe84ba31cfb772f5e79ccbdd829ad3b36` on both platforms | Does not equal current `HEAD`; provenance gate fails closed |
+| GHCR OCI source labels | `https://github.com/grayslawson/ha-switchboard` on both platforms | Source URL label agrees |
+
+The command `env -u GHCR_USERNAME -u GHCR_TOKEN -u CR_PAT -u GITHUB_TOKEN
+python3 tools/verify-ghcr-image.py --image
+ghcr.io/grayslawson/ha-switchboard --tag 0.2.0 --source-url
+https://github.com/grayslawson/ha-switchboard --revision
+799efc422b372ecc8117336a904e426126889e80` exited `1` with
+`ValueError: linux/amd64 image does not match source revision`. This is the
+expected fail-closed result for the current branch, not a publication result.
+
+Local public-tree gates were also refreshed: the exporter passed after
+examining `203 tracked files` and emitted `125` regular files; the exported
+release boundary passed; the pinned Hassfest image passed with
+`Integrations: 1` and `Invalid integrations: 0`; static HACS metadata shape
+passed; actionlint passed with no diagnostics; the focused release suite
+passed `22`; and `git diff --check` passed. `hassfest` and `hacs` executables
+are not installed. The HACS action was not invoked because its configured
+public-repository token gate was unavailable.
+
+T149 remains **pending** and T151 remains **blocked**. Unresolved gates are
+current-`HEAD` public mirror/tag/release agreement, current-`HEAD` GHCR
+revision and exact multi-architecture artifact agreement, HACS acceptance,
+public App repository/Supervisor acceptance, AppArmor enforcement parity,
+migration/rollback, provider acceptance, and installed App/Core canary proof.
+No publication, HACS acceptance, exact multi-architecture artifact match, or
+installed canary is claimed; no credential or external mutation was used.

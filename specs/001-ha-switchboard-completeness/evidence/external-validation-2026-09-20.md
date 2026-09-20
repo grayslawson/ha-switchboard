@@ -102,3 +102,31 @@ bd38f47486af5ffad16e03809179b384406a444d`:
   exit `0`; `Integrations: 1`; `Invalid integrations: 0`.
 
 The current local result therefore does not claim Hassfest or HACS acceptance.
+
+## Current branch refresh — 2026-09-20
+
+Fresh bounded checks were run against current `HEAD`
+`799efc422b372ecc8117336a904e426126889e80` on
+`codex/fix-apparmor-runtime`; the worktree was clean before this evidence
+update. The public exporter examined `203 tracked files` and produced `125`
+regular files in a temporary export. The exact commands and sanitized results
+were:
+
+| Check | Result |
+| --- | --- |
+| `python3 tools/ha-switchboard-export-public.py "$TMP/public"` | `public export: PASS (203 tracked files)` |
+| `python3 tools/check_release_boundary.py --root "$TMP/public"` | `release boundary: PASS` |
+| Read-only HACS metadata shape check for `hacs.json`, `repository.yaml`, and `custom_components/ha_switchboard/manifest.json` | `metadata/structure: PASS`; one `ha_switchboard` integration, version `0.2.0`, required manifest keys, and public repository URL present |
+| `command -v hassfest`; `command -v hacs` | both unavailable locally |
+| `timeout --kill-after=10s 180s podman run --rm --workdir /github/workspace --volume "$TMP/public:/github/workspace:ro" ghcr.io/home-assistant/hassfest@sha256:66b55a8ce14cdcf0c200dd4dab1f3228ac8d3f6e0404ec710a0d8a79b296eba4` | exit `0`; `Integrations: 1`; `Invalid integrations: 0` |
+| `actionlint -config-file .github/actionlint.yaml .forgejo/workflows/*.yml` | exit `0`, no diagnostics |
+| `python3 -m pytest -q tests/test_release_boundary.py tests/test_release_acceptance.py tests/test_release_workflows.py` | exit `0`; `22 passed` |
+| `git diff --check` | exit `0` |
+
+The HACS result remains static shape evidence only. The checked-in HACS path
+requires `GH_MIRROR_TOKEN` and invokes the pinned HACS action against the
+public GitHub repository; no HACS token was present or supplied, and that
+action was not invoked. Hassfest passed only for the read-only local export;
+it does not prove public mirror state, HACS acceptance, or an installed
+canary. No external repository, registry, or Home Assistant environment was
+mutated.

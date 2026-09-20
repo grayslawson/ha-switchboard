@@ -76,3 +76,37 @@ would not repair that mismatch.
 - No workflows, source files, tasks, existing evidence files, repositories,
   registries, Home Assistant environments, or credentials were changed.
 - Worker-owned changed file: `specs/001-ha-switchboard-completeness/evidence/provenance-checks-2026-09-20.md` only.
+
+## Current branch refresh — 2026-09-20
+
+The earlier collection above is superseded for current-branch comparison by a
+fresh read-only pass at `HEAD=799efc422b372ecc8117336a904e426126889e80` on
+`codex/fix-apparmor-runtime`. `git status --short --branch` showed no
+uncommitted paths; the branch is nine commits ahead of its local Forgejo
+tracking ref, whose observed tip is `fcff6e86e729f34d4d01201cafebe3bf86f9cddd`.
+The current `HEAD` commit changes only `.forgejo/workflows/mirror-public.yml`,
+`specs/001-ha-switchboard-completeness/tasks.md`,
+`tests/test_app_image_e2e.py`, `tests/test_release_acceptance.py`, and
+`tests/test_release_workflows.py` relative to its parent.
+
+The three coordinated source declarations still agree on `0.2.0`:
+`app/config.yaml`, `pyproject.toml`, and
+`custom_components/ha_switchboard/manifest.json`. This is local source
+evidence only.
+
+| Current read-only gate | Result | Sanitized observation |
+| --- | --- | --- |
+| Public GitHub mirror refs | pending/mismatch | `git ls-remote --heads --tags github refs/heads/master refs/tags/v0.2.0` exited `0`; `master=086eec897a86b6f143ca63ac3663e1b8148b00e3`, `v0.2.0=42dc7a0ff29ada170075f326f47fe439685ee24c`. Neither equals current `HEAD`. |
+| Public GitHub tag/release metadata | observed, not matching | Anonymous GitHub API reads reported tag object `42dc7a0ff29ada170075f326f47fe439685ee24c`; release `v0.2.0` is non-draft/non-prerelease, published `2026-09-20T02:15:33Z`, with zero assets. This does not publish or identify current `HEAD`. |
+| GHCR `0.2.0` manifest | available, provenance mismatch | Anonymous Bearer-token pull metadata reported OCI index digest `sha256:8ed4ec883608a2d11bee20be8e811f80f3306dce123c11851475722e0f6b58b9` with exactly `linux/amd64` and `linux/arm64`; both platform source labels are `https://github.com/grayslawson/ha-switchboard`, while both revision labels are `59eba81fe84ba31cfb772f5e79ccbdd829ad3b36`, not current `HEAD`. |
+| Current local GHCR verifier | failed closed as expected | With `GHCR_USERNAME`, `GHCR_TOKEN`, `CR_PAT`, and `GITHUB_TOKEN` unset, `python3 tools/verify-ghcr-image.py --image ghcr.io/grayslawson/ha-switchboard --tag 0.2.0 --source-url https://github.com/grayslawson/ha-switchboard --revision 799efc422b372ecc8117336a904e426126889e80` exited `1`: `linux/amd64 image does not match source revision`. |
+
+The GHCR index is publicly readable and advertises both expected Linux
+architectures, but exact multi-architecture artifact matching is **not**
+proven because both immutable platform revision labels identify an older
+revision. No registry credential, login, tag, push, or publication was used.
+
+The current external gates therefore remain open: current-`HEAD` public
+mirror/tag/release agreement, current-`HEAD` GHCR label agreement, HACS
+acceptance, and an installed App/Core canary. No publication, HACS
+acceptance, or installed canary is inferred.

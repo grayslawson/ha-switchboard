@@ -121,3 +121,48 @@ checks produced these sanitized results:
 
 The HACS token/public-repository gate,
 public mirror/tag/GHCR provenance, and installed App/Core canary remain open.
+
+## Current branch release/provenance refresh — 2026-09-20
+
+The current branch is clean at `HEAD`
+`799efc422b372ecc8117336a904e426126889e80`; local source declarations in
+`app/config.yaml`, `pyproject.toml`, and
+`custom_components/ha_switchboard/manifest.json` all report `0.2.0`.
+`just agent-preflight` remains unavailable in this nested checkout because no
+root-level `Justfile` exists.
+
+Current bounded checks:
+
+- `python3 tools/ha-switchboard-export-public.py "$TMP/public"`: pass,
+  `203 tracked files` examined and `125` regular files exported.
+- `python3 tools/check_release_boundary.py --root "$TMP/public"`: pass.
+- Pinned Hassfest container on the read-only export: exit `0`,
+  `Integrations: 1`, `Invalid integrations: 0`.
+- Static HACS metadata/structure check: pass for the single
+  `ha_switchboard` integration and version `0.2.0`; this is not HACS
+  acceptance.
+- `actionlint -config-file .github/actionlint.yaml .forgejo/workflows/*.yml`:
+  pass with no diagnostics.
+- `python3 -m pytest -q tests/test_release_boundary.py
+  tests/test_release_acceptance.py tests/test_release_workflows.py`: `22
+  passed`.
+- `git diff --check`: pass.
+
+Fresh anonymous external reads found GitHub `master` at
+`086eec897a86b6f143ca63ac3663e1b8148b00e3`, tag `v0.2.0` at
+`42dc7a0ff29ada170075f326f47fe439685ee24c`, and the corresponding
+non-draft/non-prerelease release with zero assets. The GHCR `0.2.0` index is
+`sha256:8ed4ec883608a2d11bee20be8e811f80f3306dce123c11851475722e0f6b58b9`
+and advertises `amd64` plus `arm64`, but both platform OCI revision labels are
+`59eba81fe84ba31cfb772f5e79ccbdd829ad3b36`, not current `HEAD`. The local
+provenance verifier therefore exited `1` with
+`linux/amd64 image does not match source revision`.
+
+Current unresolved external/installed gates are: public mirror/tag/release
+agreement with current `HEAD`; GHCR source-revision agreement and exact
+multi-architecture artifact matching; HACS action acceptance; public App
+repository/Supervisor acceptance; AppArmor enforcement parity on an installed
+artifact; migration/rollback; provider canary; and installed App/Core
+canary. No publication, HACS acceptance, multi-architecture artifact match,
+or installed canary is claimed. No credentials, push, tag, registry login,
+Home Assistant restart, reset, removal, or recreation was performed.

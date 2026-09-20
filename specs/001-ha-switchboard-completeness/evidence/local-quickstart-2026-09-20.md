@@ -1,16 +1,18 @@
 # T148 Local Quickstart Evidence — 2026-09-20
 
-Status: **partial**. The safe local source, image, lifecycle, scan, native,
-fixture, follow-up, ingress, and protected-endpoint checks were run against the
-preserved disposable harness. The opt-in App/Core restart cycle, token
-rotation, provider acceptance, and external release gates were not run. No
-production Home Assistant endpoint was used.
+Status: **partial**. Earlier bounded local evidence covers source, image,
+lifecycle, scan, native, fixture, follow-up, ingress, and protected-endpoint
+checks against the preserved disposable harness. This reconciliation refreshed
+the source count, current revision, public-export result, and read-only startup
+fact only; it did not rerun mutating or opt-in runtime probes. The App/Core
+restart cycle, token rotation, provider acceptance, and external release gates
+remain open. No production Home Assistant endpoint was used.
 
 ## Scope and baseline
 
 - Worktree: `/home/deploy/.local/state/pd-nixos/worktrees/ha-switchboard-ci-hardening`.
-- Source revision: `fcff6e86e729f34d4d01201cafebe3bf86f9cddd`; the worktree had
-  unrelated concurrent changes before this run and they were preserved.
+- Source revision at this reconciliation: `799efc422b372ecc8117336a904e426126889e80`;
+  unrelated concurrent changes and existing commits were preserved.
 - Source versions agree at App/Core `0.2.0` in the checked-in metadata.
 - Local harness: Supervisor container `busy_cohen`, loopback Supervisor port
   `7123`, Core container `homeassistant`; the startup probe verified the
@@ -22,29 +24,30 @@ production Home Assistant endpoint was used.
 
 | Gate | Status | Command and sanitized result |
 | --- | --- | --- |
-| Compile | passed | `python3 -m compileall -q app/ha_switchboard custom_components/ha_switchboard tools` — exit `0`. |
-| Source tests | passed with skips | `python3 -m pytest -q tests` — exit `0`, `393 passed, 3 skipped`. Skips were the host-side Assist/config-flow dependency checks and the explicitly opt-in native-miss runtime probe. |
-| Release boundary | passed | `python3 tools/check_release_boundary.py` — exit `0`, `release boundary: PASS`. |
-| Local App image smoke | passed | `bash tools/app-image-smoke.sh` — exit `0`; local image health, expected provider-degraded readiness, authentication boundary, persistence, stale-profile recovery, and non-root serving checks passed. This is not public-image proof. |
+| Compile | passed | Current `python3 -m compileall -q app/ha_switchboard custom_components/ha_switchboard tools tests` — exit `0`. |
+| Source tests | passed with skips | `python3 -m pytest -q tests` — exit `0`, `431 passed, 4 skipped`. Skips were the unavailable host ConversationEntity/config-flow dependencies and the two explicitly opt-in live fixture probes. |
+| Compilation/quality | passed | `python3 -m compileall -q app/ha_switchboard custom_components/ha_switchboard tools tests` — exit `0`; `python3 tools/check_release_boundary.py --quality` — `quality audit: PASS`. |
+| Public export | passed locally | `python3 tools/ha-switchboard-export-public.py <temporary-directory>` — `public export: PASS (203 tracked files)`; exported-tree boundary — `release boundary: PASS`. The temporary export contained 125 regular files. This is not HACS, public-mirror, GHCR, or release proof. |
+| Local App image smoke | previously recorded | The earlier local-image result remains a separate sanitized record; it was not rerun in this read-only reconciliation. It is not public-image proof. |
 
 ## Preserved local runtime gates
 
 | Gate | Status | Command and sanitized result |
 | --- | --- | --- |
-| Reuse/wait for existing harness | passed | `tools/local-dev.sh e2e` reused the existing harness; Supervisor, Core, observer, App-start, and App ingress checks all passed. |
-| Idempotent fixture install | passed | `python3 tools/local-fixtures/install.py` — exit `0`; local fixture package installed and Core configuration validated. No reset, volume replacement, or Core restart was requested by this command. |
-| Read-only startup | passed | `python3 tools/local-fixtures/local_api.py startup` — exit `0` before and after the fixture checks; local volume verified, options present, existing `ha_switchboard` entry present, conversation agent present, `28` fixture entities, active profile with `28` capabilities, revision present, and zero pending sections/invalidations. |
-| Read-only lifecycle | passed | Core-side `local_api.py lifecycle` — exit `0`; the same config-entry, conversation-agent, fixture-count, and active-profile facts were observed. |
-| Read-only profile | passed | Core-side `local_api.py profile` — exit `0`; profile status `active`, `28` capabilities, revision present, zero pending sections/invalidations. |
-| Bounded manual scan | passed | Core-side `local_api.py scan` — exit `0`; scan request HTTP `202`, then `completion: settled` after `8` bounded polls with active profile and zero pending sections/invalidations. |
-| Native Assist fast path | passed | Core-side `local_api.py native` — exit `0`; the Switchboard pipeline preferred local intents, event sequence completed without an error, fixture state changed and was restored, and Jev diagnostic delta was `0` (`native_provider_bypass: proved`). |
-| Native miss continuation | passed | `HA_SWITCHBOARD_RUN_NATIVE_MISS=1 python3 tools/local-fixtures/native_miss_runtime.py` — exit `0`; one bounded Assist run completed, exactly one Switchboard gateway result was observed, the conversation ID was reused, and no recursion was observed. |
-| Fixture operation coverage | passed | Core-side `local_api.py coverage` — exit `0`; `24/24` executable operation rows were present and exposed, with no missing or unexposed rows. Two native-Core-only surfaces were present and unexposed. |
-| Native-only boundary | passed | Core-side `local_api.py unsupported` — exit `0`; both native-only surfaces were present, unexposed, and not Switchboard capabilities. |
-| Direct fixture operation matrix | partial | Core-side `local_api.py exercise` — exit `0`; all `24/24` direct service/state transitions verified. The helper output did not include a post-action restoration assertion, so this run does not claim fixture-state restoration for the matrix. |
-| Follow-up conversation | partial | Core-side `local_api.py follow-up` — exit `0`; same-conversation continuation, cancellation without a write, and replay safety were proved. Different-user and natural TTL-expiry checks were `unavailable` because they require an additional HA user/clock setup and no auth mutation was performed. |
-| Config-entry verification | passed | Core-side `local_api.py verify` — exit `0`; exactly one local `ha_switchboard` entry, Hass.io source, version `1`, and token presence were confirmed without printing connection data. |
-| Deterministic failure fixtures | passed | Core-side `local_api.py failures` — exit `0`; stable provider-unavailable, malformed-provider, missing/out-of-range-parameter, and unknown-capability cases were emitted without provider calls or secrets. |
+| Reuse/wait for existing harness | previously recorded | `tools/local-dev.sh e2e` reused the existing harness; Supervisor, Core, observer, App-start, and App ingress checks all passed. It was not rerun in this read-only reconciliation. |
+| Idempotent fixture install | previously recorded | `python3 tools/local-fixtures/install.py` — exit `0`; local fixture package installed and Core configuration validated. It was not rerun here; no reset, volume replacement, or Core restart was requested. |
+| Read-only startup | passed | `timeout 60s python3 tools/local-fixtures/local_api.py startup` — exit `0`; `mode=read_only`, `ready=true`, local volume verified, options present, existing `ha_switchboard` entry present, conversation agent present, `28` fixture entities, active profile with `28` capabilities, revision present, and zero pending sections/invalidations. |
+| Read-only lifecycle | previously recorded | Core-side `local_api.py lifecycle` — exit `0`; the same config-entry, conversation-agent, fixture-count, and active-profile facts were observed. It was not rerun here. |
+| Read-only profile | previously recorded | Core-side `local_api.py profile` — exit `0`; profile status `active`, `28` capabilities, revision present, zero pending sections/invalidations. It was not rerun here. |
+| Bounded manual scan | passed in earlier evidence | Earlier Core-side `local_api.py scan` evidence recorded HTTP `202`, then `completion: settled` after bounded polls with active profile and zero pending sections/invalidations. It was not rerun here. |
+| Native Assist fast path | passed in earlier evidence | Earlier Core-side `local_api.py native` evidence recorded local-intent preference, a completed event sequence, fixture-state restoration, and Jev diagnostic delta `0`. It was not rerun here. |
+| Native miss continuation | passed in earlier opt-in evidence | Earlier `native_miss_runtime.py` evidence recorded one bounded Assist run, exactly one Switchboard gateway result, conversation reuse, and no recursion. It was not rerun here. |
+| Fixture operation coverage | previously recorded | Core-side `local_api.py coverage` — exit `0`; `24/24` executable operation rows were present and exposed, with no missing or unexposed rows. Two native-Core-only surfaces were present and unexposed. It was not rerun here. |
+| Native-only boundary | previously recorded | Core-side `local_api.py unsupported` — exit `0`; both native-only surfaces were present, unexposed, and not Switchboard capabilities. It was not rerun here. |
+| Direct fixture operation matrix | partial, previously recorded | Core-side `local_api.py exercise` — exit `0`; all `24/24` direct service/state transitions verified. The helper output did not include a post-action restoration assertion, so this run does not claim fixture-state restoration for the matrix. |
+| Follow-up conversation | partial | Earlier Core-side `local_api.py follow-up` evidence proved same-conversation continuation, cancellation without a write, and replay safety. Different-user and natural TTL-expiry checks remain `unavailable`; this reconciliation did not create users, mutate auth, or wait on TTL. |
+| Config-entry verification | previously recorded | Core-side `local_api.py verify` — exit `0`; exactly one local `ha_switchboard` entry, Hass.io source, version `1`, and token presence were confirmed without printing connection data. It was not rerun here. |
+| Deterministic failure fixtures | previously recorded | Core-side `local_api.py failures` — exit `0`; stable provider-unavailable, malformed-provider, missing/out-of-range-parameter, and unknown-capability cases were emitted without provider calls or secrets. It was not rerun here. |
 
 ## Acceptance matrix classification
 
@@ -103,5 +106,21 @@ The following is the complete quickstart matrix classification for this run;
 - The direct fixture matrix helper completed all rows but did not emit a
   restoration assertion; this is recorded as partial/attention rather than
   inferred success.
-- Worker-owned changed files: [local-quickstart-2026-09-20.md](local-quickstart-2026-09-20.md)
-  only. Existing concurrent changes in the shared worktree were not edited.
+- Worker-owned changed files are the four files in this task scope:
+  `quickstart.md`, `evidence/local-checks-2026-09-20.md`,
+  `evidence/local-quickstart-2026-09-20.md`, and
+  `evidence/live-gate-readiness-2026-09-20.md`. Existing concurrent changes
+  outside that scope were not edited.
+
+## Task disposition
+
+- **T059:** remains open/partial. Same-conversation, cancellation, and replay
+  are locally evidenced; second-user and natural-TTL live proof is unavailable.
+- **T084:** remains open/partial. Startup/scan/readiness and the default
+  restart no-op are evidenced; the authorized App/Core restart cycle was not
+  run.
+- **T148:** remains open/partial. Local evidence is recorded, but the complete
+  quickstart lifecycle/provider/security/release matrix is not complete.
+- **T149/T151:** remain pending. No exact HACS, public-mirror/tag/GHCR
+  provenance, protected-master, publication, or installed-canary evidence is
+  claimed here.

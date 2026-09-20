@@ -4,76 +4,57 @@ This is a validation guide, not an implementation recipe. It is safe for the
 existing local development environment: normal commands restart or rebuild
 processes but do not remove the Supervisor/Core volume.
 
-**T148 evidence status (2026-09-20): partial.** This quickstart was not
-executed as a complete live Supervisor/App/Core acceptance run during this
-documentation pass. Its commands and matrix define required evidence; they do
-not claim that the fixture, live Assist pipeline, or release canary succeeded.
-A detailed sanitized partial run is recorded in
-`evidence/local-quickstart-2026-09-20.md`; the status remains partial for
-the same unrun lifecycle, provider, security-enforcement, and release gates.
-The source metadata in this worktree currently agrees on App/Core version
-`0.2.0`; that is source evidence, not an installed or published artifact.
+**T148 evidence status (2026-09-20): partial.** This quickstart is not a
+complete live Supervisor/App/Core acceptance run. Its commands and matrix
+define required evidence; they do not claim that every fixture scenario,
+live provider path, or release canary succeeded. A detailed sanitized partial
+run is recorded in `evidence/local-quickstart-2026-09-20.md`; the status
+remains partial for the unrun lifecycle, provider, security-enforcement, and
+release gates. The current source metadata agrees on App/Core version `0.2.0`,
+but that is source evidence, not installed or published-artifact proof.
 
-The latest source-level pytest run was `411 passed, 4 skipped`; the skips
-require the Home Assistant runtime/config-flow dependency in the host
-worktree or are explicitly opt-in live fixture probes. No command in this
-documentation pass reset, removed, or
-reconfigured the Home Assistant volume. A preserve-first App-only rebuild was
-performed and followed by read-only startup/recovery checks; Core was not
-restarted and the opt-in restart-cycle was not run.
+The current source-level run at `HEAD`
+`799efc422b372ecc8117336a904e426126889e80` was `431 passed, 4 skipped`.
+The skips are the unavailable host ConversationEntity/config-flow dependencies
+and two explicitly opt-in live fixture probes. No command in this
+reconciliation reset, removed, recreated, reconfigured, or restarted the
+Home Assistant volume or Core. The current read-only startup check passed;
+the opt-in restart cycle was not run.
 
-The preserved local Supervisor harness was also recovered and checked
-read-only on this date: Supervisor and Core returned HTTP 200, the App was
-started and `/readyz` reported a ready profile, the persisted Core entry and
-conversation entity were present, three Assist pipelines were available, and
-the fixture covered the published mock domains. This is local-runtime proof,
-not public-release or live-provider proof.
+The preserved local Supervisor harness was checked read-only on this date:
+`local_api.py startup` reported `mode=read_only`, `ready=true`, the existing
+`ha_switchboard` entry, the conversation agent, 28 fixture entities, 28 active
+capabilities, a revision, and zero pending sections/invalidations. This is
+local-runtime proof, not public-release or live-provider proof.
 
-**Additional sanitized local evidence (2026-09-20):** Using the preserved
-`busy_cohen` harness read-only, `lifecycle` reported the existing
-`ha_switchboard` entry, `conversation` agent present, 28 fixture entities, and
-an active profile with 28 capabilities and no pending sections or
-invalidations. The bounded `scan` command received HTTP 202 and reached
-`completion: settled` with an active/no-pending profile; no credentials,
-gateway URL, raw entity IDs, or provider response bodies were emitted. The
-preserve-first App-only rebuild and subsequent read-only `restart-cycle`
-check retained the same volume, config entry, fixture count, and active
-profile. This is not proof of the opt-in App/Core restart cycle; that remains
-closed by default and requires an explicit disposable-harness authorization.
-The separate sanitized readiness record in
-`evidence/live-gate-readiness-2026-09-20.md` confirms that no non-owner access
-token is available for the cross-user probe and that the protected restart
-preflight is ready but was not authorized.
+**Additional sanitized local evidence (2026-09-20):** Earlier bounded local
+records show `lifecycle`, `profile`, and `scan` evidence: the scan received
+HTTP 202 and reached `completion: settled` with an active/no-pending profile.
+The default `restart-cycle` inspection was a no-op. These checks were not
+rerun in this read-only reconciliation, and they do not prove the opt-in
+App/Core restart cycle. The separate readiness record confirms that no
+non-owner access token is available for the cross-user probe and that the
+protected restart preflight was ready but not authorized.
 
-**Additional sanitized fixture evidence (2026-09-20):** The host-side
-`startup` check passed without mutation. The idempotent Assist exposure repair
-then reported all 24 executable operation rows present and exposed, while the
-2 native-Core-only surfaces were present and unexposed. The bounded disposable
-fixture operation matrix verified 24 of 24 service/state transitions. The
-source-built App image smoke and isolated image E2E harness both passed,
-including non-root runtime, token boundary, ingress, persistence, and
-provider-degraded readiness checks. These results do not prove a public image,
-Hassfest/HACS acceptance, provider compatibility, or an App/Core restart cycle.
-The real fixture Assist follow-up also proved the requested conversation ID,
-confirmation cancellation, and replay safety. The harness accepts an
-explicitly supplied second-user token and a bounded natural-TTL opt-in, but
-those live inputs remain unavailable in this preserved environment; the
-default run does not create users or wait on the TTL. Clock-controlled source
-tests cover both boundaries.
+**Additional sanitized fixture evidence (2026-09-20):** Earlier bounded
+fixture records reported all 24 executable operation rows present and exposed,
+the 2 native-Core-only surfaces present and unexposed, and 24 of 24 direct
+service/state transitions verified. Earlier local image/E2E records also
+reported non-root, token-boundary, ingress, persistence, and
+provider-degraded-readiness checks. Those are local records, not public-image,
+HACS/Hassfest, provider-compatibility, or App/Core restart proof. The live
+follow-up record proves same-conversation continuation, cancellation, and
+replay safety; second-user and natural-TTL inputs remain unavailable. The
+current read-only pass did not rerun these mutating/opt-in probes.
 
-**Additional native Assist evidence (2026-09-20):** The preserve-first App
-rebuild refreshed the installed local image without removing the Supervisor or
-Core volume. The repeatable `local_api.py native` check then selected the real
-`Switchboard` pipeline with `prefer_local_intents` enabled and accepted a
-routine fixture-light request. The live event sequence reached `run-start`,
-`intent-start`, `intent-end`, and `run-end` without an error; the fixture state
-changed to off and was restored; and the gateway's bounded Jev diagnostic count
-did not change (`jev_diagnostic_delta: 0`). The diagnostics endpoint returned
-HTTP 200 after the App refresh. The bounded `native_miss_runtime.py` probe
-separately verified one completed Assist run, one Switchboard gateway result,
-conversation reuse, and no recursion. This closes T153 native success,
-provider-bypass, and native-miss continuation evidence. The full
-public-release canary remains a separate gate.
+**Additional native Assist evidence (2026-09-20):** Earlier bounded records
+show the real `Switchboard` pipeline with `prefer_local_intents`, a completed
+native event sequence, fixture-state restoration, and
+`jev_diagnostic_delta: 0`. The separate native-miss probe reported one
+completed Assist run, one Switchboard gateway result, conversation reuse, and
+no recursion. This is local native/provider-bypass evidence only; the current
+read-only pass did not rerun it, and the full public-release canary remains a
+separate gate.
 
 ## Prerequisites
 
@@ -232,22 +213,23 @@ full provider responses in the evidence record.
 
 ## Observed source evidence for this pass
 
-- Worktree: `codex/fix-apparmor-runtime`, source-bearing candidate commit
-  `d513f5ef89333e338ddb4a49306c8b97e6f3b2dc`; a later local-only evidence
-  reconciliation commit contains no source/image changes. External
-  publication gates remain open.
+- Worktree: `codex/fix-apparmor-runtime`, current `HEAD`
+  `799efc422b372ecc8117336a904e426126889e80`. This is the source revision
+  used for the current read-only checks; external publication gates remain
+  open.
 - Coordinated source version: `0.2.0` in the App config/image metadata, gateway
   package, Core manifest, and changelog.
-- Local source checks: `python3 -m compileall -q app/ha_switchboard
-  custom_components/ha_switchboard tools` passed; the full test suite passed
-  (`411 passed, 4 skipped`), with two skips requiring the Home Assistant
-  runtime/config-flow dependency and two opt-in live fixture probes; the
-  focused release, workflow, boundary, and quality tests also passed (`37
-  passed`). The sanitized public export
-  contains 109 tracked files and passes its release-boundary check; workflow
-  lint also passed.
-- `python3 tools/check_release_boundary.py` passed, and `git diff --check`
-  reported no whitespace errors for the owned paths.
+- Current local source checks: `python3 -m compileall -q
+  app/ha_switchboard custom_components/ha_switchboard tools tests` passed;
+  `python3 -m pytest -q tests` passed (`431 passed, 4 skipped`); and
+  `python3 tools/check_release_boundary.py --quality` passed. The current
+  skips are the unavailable host ConversationEntity/config-flow dependencies
+  and two opt-in live fixture probes. `git diff --check` is clean for the
+  owned paths.
+- The current read-only public export passed as `public export: PASS (203
+  tracked files)`; its temporary export contained 125 regular files and
+  `check_release_boundary.py --root` passed. This is local export evidence,
+  not HACS, public-mirror, GHCR, or release proof.
 - The preserve-first runtime guards now verify Docker volume identity and
   settled-profile invariants before an explicitly authorized restart; the
   default `restart-cycle` inspection remained read-only with no restart
@@ -258,12 +240,13 @@ full provider responses in the evidence record.
   read-only startup check, a repeatable native Assist check, and a read-only
   restart-cycle inspection; it did not run the opt-in Core/App restart cycle.
 
-The exact external gates still open are protected-master ancestry, public
-mirror/tag/Release, GHCR immutable multi-architecture image and source-label
-verification, HACS and Hassfest validation on the exported tree, provider
-acceptance, complete live Assist/E2E coverage, and the installed App/Core
-update, restart, rollback, and canary evidence. Local metadata, tests, a
-fixture, or a local image cannot close any of them.
+The exact gates still open are the authorized live portions of T059 and T084,
+the complete T148 quickstart, and T149/T151 publication and canary evidence.
+That includes second-user/natural-TTL follow-up, the protected App/Core
+restart cycle, provider acceptance, installed AppArmor enforcement, HACS,
+public mirror/tag/release agreement, GHCR immutable multi-architecture
+provenance, and installed update/restart/rollback/canary evidence. Local
+metadata, tests, a fixture, or a local image cannot close any of them.
 
 All fixture, local App-image, and E2E output is sanitized disposable-harness
 evidence. It must not be presented as proof of a public release, HACS/App

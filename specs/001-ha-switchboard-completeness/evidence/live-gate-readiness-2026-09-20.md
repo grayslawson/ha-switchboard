@@ -9,6 +9,8 @@ provider was contacted.
 
 - Worktree: `/home/deploy/.local/state/pd-nixos/worktrees/ha-switchboard-ci-hardening`.
 - Branch: `codex/fix-apparmor-runtime`.
+- Current `HEAD`: `799efc422b372ecc8117336a904e426126889e80`; coordinated
+  App/Core source version: `0.2.0`.
 - Worker-owned file: this evidence file only. Existing concurrent changes were
   preserved.
 - The repository-level `just agent-preflight` entrypoint was attempted but was
@@ -25,7 +27,7 @@ provider was contacted.
 
 | Check | Exact command | Result |
 | --- | --- | --- |
-| Local startup readiness | `timeout 60s python3 tools/local-fixtures/local_api.py startup` | **PASS**, exit `0`; read-only mode, existing App options present, existing Core integration entry present, conversation agent present, 28 fixture records, active gateway profile, revision present, zero pending sections/invalidations, and verified local Supervisor volume identity. |
+| Local startup readiness | `timeout 60s python3 tools/local-fixtures/local_api.py startup` | **PASS**, exit `0`; `mode=read_only`, `ready=true`, existing App options present, existing Core integration entry present, conversation agent present, 28 fixture records, active gateway profile, revision present, zero pending sections/invalidations, and verified local Supervisor volume identity. |
 | Core config-entry verification | `timeout 45s docker exec -i busy_cohen docker exec -i homeassistant python3 - verify < tools/local-fixtures/local_api.py` | **PASS**, exit `0`; exactly one Switchboard config entry, expected source/version, and gateway-token presence reported as a boolean only. |
 | Protected restart no-op | `timeout 60s python3 tools/local-fixtures/local_api.py restart-cycle` | **PASS**, exit `0`; `mode=read_only`, `restart_requested=false`, `restart_performed=false`; pre-restart lifecycle and option-presence evidence returned; no restart command was issued. |
 | Count-only Core auth-store inspection | `timeout 20s docker exec -i busy_cohen docker exec -i homeassistant python3 - <<'PY' ... PY` (probe below) | **PASS**, exit `0`; auth store readable; 3 user records, 2 non-owner user records, 3 refresh-token records, 1 long-lived access-token record, 1 owner-associated long-lived access-token record, **0 non-owner long-lived access-token records**, and 0 unresolved long-lived access-token records. No identities or token material were printed. |
@@ -99,6 +101,10 @@ either restart command.
 | T148 quickstart live lifecycle portion | **PARTIAL** | Current local startup and config-entry readiness passed; complete quickstart acceptance remains open because the protected restart cycle and other separately gated portions were not run. |
 | T148 provider acceptance | **UNAVAILABLE / NOT RUN** | No external provider was invoked. Provider credentials, availability, and wire compatibility remain unproven. |
 | T148 AppArmor/security-enforcement runtime proof | **UNAVAILABLE / NOT RUN** | These read-only fixture commands do not prove installed AppArmor enforcement. No security-enforcement mutation or restart was attempted. |
+| T149 release acceptance | **PENDING** | No HACS/public-mirror/GHCR/protected-master/installed-canary evidence was produced by this local readiness pass. Existing local export or source checks cannot close the external release gate. |
+| T151 publication | **PENDING** | No exact protected-master, public tag/mirror, immutable image, and installed App/Core agreement was established; no publication operation was authorized or attempted. |
 
 No result above is a claim of a completed protected restart, second-user live
-authorization, natural expiry, provider acceptance, or complete quickstart.
+authorization, natural expiry, provider acceptance, complete quickstart,
+release acceptance, or publication. T059, T084, T148, T149, and T151 remain
+open/partial pending their exact missing evidence.
