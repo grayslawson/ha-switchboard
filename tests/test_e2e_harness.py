@@ -362,6 +362,57 @@ def test_follow_up_opt_ins_are_strict_and_default_to_unavailable(monkeypatch) ->
     assert natural_expiry is False
 
 
+def test_second_user_identity_is_checked_in_memory_and_fails_closed(monkeypatch) -> None:
+    api = _fixture_api()
+
+    class FakeJwt:
+        @staticmethod
+        def decode(_token, *, options):
+            assert options == {"verify_signature": False}
+            return {"iss": "second-refresh"}
+
+    class FakeAuthPath:
+        def __init__(self, _path):
+            pass
+
+        def read_text(self, *args, **kwargs):
+            return json.dumps({
+                "data": {
+                    "users": [
+                        {"id": "owner", "is_owner": True},
+                        {"id": "second", "is_owner": False},
+                    ],
+                    "refresh_tokens": [
+                        {"id": "owner-refresh", "user_id": "owner", "token_type": "long_lived_access_token"},
+                        {"id": "second-refresh", "user_id": "second", "token_type": "long_lived_access_token"},
+                    ],
+                }
+            })
+
+    monkeypatch.setitem(sys.modules, "jwt", FakeJwt)
+    monkeypatch.setattr(api, "Path", FakeAuthPath)
+
+    assert api.owner_user_id() == "owner"
+    assert api.access_token_user_id("opaque-second-token") == "second"
+
+    class SameUserJwt(FakeJwt):
+        @staticmethod
+        def decode(_token, *, options):
+            return {"iss": "owner-refresh"}
+
+    monkeypatch.setitem(sys.modules, "jwt", SameUserJwt)
+    assert api.access_token_user_id("opaque-owner-token") == "owner"
+
+    class UnknownUserJwt(FakeJwt):
+        @staticmethod
+        def decode(_token, *, options):
+            return {"iss": "unknown-refresh"}
+
+    monkeypatch.setitem(sys.modules, "jwt", UnknownUserJwt)
+    with pytest.raises(RuntimeError, match="identity could not be verified"):
+        api.access_token_user_id("opaque-unknown-token")
+
+
 def test_natural_ttl_wait_has_a_fixed_maximum(monkeypatch) -> None:
     api = _fixture_api()
     slept: list[int] = []
