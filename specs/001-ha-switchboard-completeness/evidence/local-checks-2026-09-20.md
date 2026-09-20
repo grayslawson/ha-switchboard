@@ -7,20 +7,20 @@ raw entity identifiers, utterances, provider bodies, or volume paths are
 retained here.
 
 Current baseline: branch `codex/fix-apparmor-runtime`, `HEAD`
-`ac7f52d`, coordinated App/Core version
+`1ccb6ce2ba5e162249f4f15847280763aee4fb9e`, coordinated App/Core version
 `0.2.0`.
 
 ## Source and packaging
 
 | Gate | Result | Evidence |
 | --- | --- | --- |
-| Full source tests | passed with expected skips | `python3 -m pytest -q tests` — `451 passed, 4 skipped`. Skips are the unavailable host ConversationEntity/config-flow dependencies and the two opt-in live fixture probes. |
+| Full source tests | passed with expected skips | `python3 -m pytest -q tests` — `459 passed, 4 skipped`. Skips are the unavailable host ConversationEntity/config-flow dependencies and the two opt-in live fixture probes. |
 | Compilation and quality | passed | `python3 -m compileall -q app/ha_switchboard custom_components/ha_switchboard tools tests`; `python3 tools/check_release_boundary.py --quality`; `git diff --check` for the owned paths. |
 | Workflow lint | passed | `actionlint -config-file .github/actionlint.yaml .forgejo/workflows/*.yml`. |
 | Publication workflow hardening | passed locally | `python3 -m pytest -q tests/test_release_workflows.py tests/test_release_boundary.py tests/test_local_dev.py` — `24 passed`; the mirror workflow now requires the exact source/tag revision, commit marker, GHCR gate, and App-image E2E gate before public publication. |
 | Public export | passed locally | `python3 tools/ha-switchboard-export-public.py <temporary-directory>` — `public export: PASS (204 tracked files)`; the temporary export contained 117 regular files, and `python3 <temporary-export>/tools/check_release_boundary.py --root <temporary-export>` passed. This is not HACS, public-mirror, GHCR, or release proof. |
 | Provenance gate hardening | passed locally | `python3 -m pytest -q tests/test_ghcr_revision_gate.py` — `8 passed`; the verifier now supports sanitized offline records, anonymous read-only registry validation, immutable digests, exact architecture sets, and release/image/source revision agreement. It does not turn the currently mismatched public `v0.2.0` artifact into a valid candidate. |
-| Local App-image smoke/E2E | smoke passed for current source; E2E remains prior evidence | `bash tools/app-image-smoke.sh` exited `0` for `ac7f52d`; local image, non-root runtime, Supervisor-like ingress/token boundary, persistence/recreate, and bounded cleanup checks passed. The prior bounded E2E run also exited `0`; AppArmor was accurately reported unavailable on this WSL host. |
+| Local App-image smoke/E2E | passed for current source | `bash tools/app-image-smoke.sh` and `bash tools/app-image-e2e.sh` exited `0` for `1ccb6ce`; local image, non-root runtime, Supervisor-like ingress/token boundary, persistence/recreate, and bounded cleanup checks passed. AppArmor was accurately reported unavailable on this WSL host. |
 
 ## Preserved local runtime
 
@@ -60,11 +60,13 @@ request was performed for this evidence record.
 ## Current checkout reconciliation — 2026-09-20
 
 The current source descendant at `HEAD
-e8538be` was freshly checked with the full source suite (`445 passed, 4 skipped`), compilation,
-`check_release_boundary.py --quality`, private workflow `actionlint`, and
+1ccb6ce` was freshly checked with the full source suite (`459 passed, 4 skipped`), compilation,
+`check_release_boundary.py --quality`, `check_release_boundary.py`, and
 `git diff --check`. A fresh read-only public export passed with `204` tracked
 files and `117` regular files; the exported-tree release boundary passed. The
-focused release/boundary/local-dev/workflow suite passed `24 tests`.
+focused release/provenance/acceptance/boundary/local-dev/workflow suite passed
+`44 tests`, and the focused group/harness suite passed `61 tests with 1
+opt-in skip`.
 
 These fresh checks do not refresh the earlier App-image, preserved-harness,
 provider, public-mirror, GHCR, HACS, AppArmor, or canary observations. Those
