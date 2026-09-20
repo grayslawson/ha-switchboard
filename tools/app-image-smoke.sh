@@ -11,7 +11,12 @@ TARGET_PLATFORM="${TARGET_PLATFORM:-linux/amd64}"
 KEEP_IMAGE="${KEEP_IMAGE:-0}"
 IMAGE="${IMAGE:-ha-switchboard-local-smoke:$$}"
 CONTAINER="ha-switchboard-local-smoke-$$"
+ENGINE_NAME=""
+BUILD_TIMEOUT_SECONDS=300
+ENGINE_TIMEOUT_SECONDS=30
+CLEANUP_TIMEOUT_SECONDS=15
 SMOKE_GATEWAY_TOKEN="local-smoke-gateway-token"
+TIMEOUT_BIN="$(command -v timeout || true)"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ha-switchboard-smoke.XXXXXX")"
 DATA_DIR="$TMP_DIR/data"
 mkdir "$DATA_DIR"
@@ -19,11 +24,27 @@ mkdir "$DATA_DIR"
 # Match Supervisor's root-owned, non-world-writable /data mount.
 chmod 755 "$DATA_DIR"
 
-remove_container() {
-  if [[ "$ENGINE" == "podman" ]]; then
-    "$ENGINE" rm --force --time 0 "$1" >/dev/null 2>&1
+run_bounded() {
+  local duration=$1
+  shift
+  if [[ -n "$TIMEOUT_BIN" ]]; then
+    "$TIMEOUT_BIN" --kill-after=5s "$duration" "$@"
   else
-    "$ENGINE" rm --force "$1" >/dev/null 2>&1
+    "$@"
+  fi
+}
+
+engine_command() {
+  local duration=$1
+  shift
+  run_bounded "$duration" "$ENGINE" "$@"
+}
+
+remove_container() {
+  if [[ "$ENGINE_NAME" == "podman" ]]; then
+    engine_command "$ENGINE_TIMEOUT_SECONDS" rm --force --time 0 "$1" >/dev/null 2>&1
+  else
+    engine_command "$ENGINE_TIMEOUT_SECONDS" rm --force "$1" >/dev/null 2>&1
   fi
 }
 
@@ -31,19 +52,24 @@ cleanup() {
   local result=$?
   trap - EXIT
   set +e
+  local cleanup_failed=0
   if [[ -n "${CONTAINER_STARTED:-}" && -n "${ENGINE:-}" ]]; then
-    remove_container "$CONTAINER"
+    remove_container "$CONTAINER" || cleanup_failed=1
   fi
   if [[ "$KEEP_IMAGE" != 1 && -n "${ENGINE:-}" ]]; then
-    "$ENGINE" image rm "$IMAGE" >/dev/null 2>&1
+    engine_command "$CLEANUP_TIMEOUT_SECONDS" image rm "$IMAGE" >/dev/null 2>&1 || cleanup_failed=1
   fi
-  if [[ "$ENGINE" == podman ]]; then
-    podman unshare rm -r -- "$TMP_DIR"
+  if [[ "$ENGINE_NAME" == podman ]]; then
+    engine_command "$CLEANUP_TIMEOUT_SECONDS" unshare rm -r -- "$TMP_DIR" >/dev/null 2>&1 || cleanup_failed=1
   else
-    rm -r -- "$TMP_DIR"
+    run_bounded "$CLEANUP_TIMEOUT_SECONDS" rm -r -- "$TMP_DIR" >/dev/null 2>&1 || cleanup_failed=1
   fi
   if [[ -e "$TMP_DIR" ]]; then
     echo "smoke-test data cleanup failed: $TMP_DIR" >&2
+    cleanup_failed=1
+  fi
+  if (( cleanup_failed )); then
+    echo "smoke-test cleanup failed; inspect container=${CONTAINER:-unknown} image=${IMAGE:-unknown}" >&2
     result=1
   fi
   exit "$result"
@@ -64,6 +90,16 @@ command -v "$ENGINE" >/dev/null 2>&1 || {
   echo "container engine not found: $ENGINE" >&2
   exit 2
 }
+ENGINE_NAME="$(basename -- "$ENGINE")"
+case "$ENGINE_NAME" in
+  docker|podman) ;;
+  *) echo "unsupported container engine: $ENGINE (use docker or podman)" >&2; exit 2 ;;
+esac
+TIMEOUT_BIN="$(command -v timeout || true)"
+[[ -n "$TIMEOUT_BIN" ]] || {
+  echo "GNU timeout is required to bound image build and cleanup operations" >&2
+  exit 2
+}
 command -v curl >/dev/null 2>&1 || {
   echo "curl is required for local endpoint checks" >&2
   exit 2
@@ -75,21 +111,21 @@ command -v python3 >/dev/null 2>&1 || {
 
 echo "engine=$ENGINE platform=$TARGET_PLATFORM"
 echo "building App image"
-"$ENGINE" build \
+engine_command "$BUILD_TIMEOUT_SECONDS" build \
   --platform "$TARGET_PLATFORM" \
   --build-arg BUILD_VERSION="${BUILD_VERSION:-local-smoke}" \
   --build-arg BUILD_ARCH=amd64 \
   --tag "$IMAGE" \
   "$ROOT_DIR/app"
 
-declared_user=$("$ENGINE" image inspect --format '{{.Config.User}}' "$IMAGE")
+declared_user=$(engine_command "$ENGINE_TIMEOUT_SECONDS" image inspect --format '{{.Config.User}}' "$IMAGE")
 [[ "$declared_user" == "0:0" ]] || {
   echo "unexpected declared image user: $declared_user" >&2
   exit 1
 }
 
 echo "starting image with a root-only data preparation step"
-"$ENGINE" run --detach --name "$CONTAINER" \
+engine_command "$ENGINE_TIMEOUT_SECONDS" run --detach --name "$CONTAINER" \
   --publish 127.0.0.1::8099 \
   --volume "$DATA_DIR:/data:rw" \
   --env GATEWAY_TOKEN="$SMOKE_GATEWAY_TOKEN" \
@@ -97,7 +133,7 @@ echo "starting image with a root-only data preparation step"
   "$IMAGE" >/dev/null
 CONTAINER_STARTED=1
 
-port=$("$ENGINE" port "$CONTAINER" 8099/tcp | sed -n 's/.*://p' | head -n 1)
+port=$(engine_command "$ENGINE_TIMEOUT_SECONDS" port "$CONTAINER" 8099/tcp | sed -n 's/.*://p' | head -n 1)
 [[ "$port" =~ ^[0-9]+$ && "$port" != 0 ]] || {
   echo "could not determine published port" >&2
   exit 1
@@ -183,8 +219,8 @@ assert status["profile_revision"], status
 assert status["capability_count"] > 0, status
 PY
 
-runtime_uid=$("$ENGINE" exec "$CONTAINER" awk '/^Uid:/ {print $2}' /proc/1/status)
-runtime_gid=$("$ENGINE" exec "$CONTAINER" awk '/^Gid:/ {print $2}' /proc/1/status)
+runtime_uid=$(engine_command "$ENGINE_TIMEOUT_SECONDS" exec "$CONTAINER" awk '/^Uid:/ {print $2}' /proc/1/status)
+runtime_gid=$(engine_command "$ENGINE_TIMEOUT_SECONDS" exec "$CONTAINER" awk '/^Gid:/ {print $2}' /proc/1/status)
 [[ "$runtime_uid" == 65532 && "$runtime_gid" == 65532 ]] || {
   echo "runtime identity is $runtime_uid:$runtime_gid, expected 65532:65532" >&2
   exit 1
@@ -192,7 +228,7 @@ runtime_gid=$("$ENGINE" exec "$CONTAINER" awk '/^Gid:/ {print $2}' /proc/1/statu
 
 # Reconciliation must persist sanitized profile state and leave the mounted data
 # directory writable to the serving process after it drops privileges.
-"$ENGINE" exec --user 65532:65532 "$CONTAINER" python3 -c '
+engine_command "$ENGINE_TIMEOUT_SECONDS" exec --user 65532:65532 "$CONTAINER" python3 -c '
 from pathlib import Path
 import json
 
@@ -211,8 +247,8 @@ echo "/data: profile persisted, sanitized, and writable"
 
 remove_container "$CONTAINER"
 CONTAINER="$CONTAINER-restarted"
-"$ENGINE" run --detach --name "$CONTAINER" --publish 127.0.0.1::8099 --volume "$DATA_DIR:/data:rw" --env GATEWAY_TOKEN="$SMOKE_GATEWAY_TOKEN" --env HA_SWITCHBOARD_INGRESS_ONLY=false "$IMAGE" >/dev/null
-port=$("$ENGINE" port "$CONTAINER" 8099/tcp | sed -n 's/.*://p' | head -n 1)
+engine_command "$ENGINE_TIMEOUT_SECONDS" run --detach --name "$CONTAINER" --publish 127.0.0.1::8099 --volume "$DATA_DIR:/data:rw" --env GATEWAY_TOKEN="$SMOKE_GATEWAY_TOKEN" --env HA_SWITCHBOARD_INGRESS_ONLY=false "$IMAGE" >/dev/null
+port=$(engine_command "$ENGINE_TIMEOUT_SECONDS" port "$CONTAINER" 8099/tcp | sed -n 's/.*://p' | head -n 1)
 [[ "$port" =~ ^[0-9]+$ && "$port" != 0 ]] || {
   echo "could not determine replacement container port" >&2
   exit 1
@@ -235,6 +271,6 @@ with open(sys.argv[1], encoding="utf-8") as handle:
 assert status["status"] == "stale", status
 assert status["profile_revision"], status
 PY
-"$ENGINE" exec "$CONTAINER" test -s /data/profile.json
+engine_command "$ENGINE_TIMEOUT_SECONDS" exec "$CONTAINER" test -s /data/profile.json
 echo "restart/recreate: persisted profile restored as stale and writes remain fail-closed"
 echo "local App image smoke passed"

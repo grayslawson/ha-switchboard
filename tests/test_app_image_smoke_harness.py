@@ -40,6 +40,16 @@ def test_app_smoke_accepts_provider_degraded_readiness_but_requires_active_profi
 
 def test_smoke_harness_cleans_rootless_volume_and_fails_if_it_cannot() -> None:
     text = HARNESS.read_text(encoding="utf-8")
-    assert 'podman unshare rm -r -- "$TMP_DIR"' in text
+    assert 'engine_command "$CLEANUP_TIMEOUT_SECONDS" unshare rm -r -- "$TMP_DIR"' in text
     assert 'if [[ -e "$TMP_DIR" ]]' in text
     assert "result=1" in text
+
+
+def test_smoke_harness_bounds_engine_operations_and_reports_cleanup_failures() -> None:
+    text = HARNESS.read_text(encoding="utf-8")
+
+    assert 'command -v timeout' in text
+    assert '--kill-after=5s' in text
+    assert 'cleanup_failed=0' in text
+    assert 'image rm "$IMAGE" >/dev/null 2>&1 || cleanup_failed=1' in text
+    assert 'remove_container "$CONTAINER" || cleanup_failed=1' in text

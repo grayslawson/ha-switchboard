@@ -19,9 +19,27 @@ def test_image_e2e_harness_is_bounded_and_fail_closed() -> None:
     assert "while true" not in text
     assert "cleanup_failed=1" in text
     assert '[[ -e "$DATA_DIR" ]]' in text
-    assert 'case "$(basename -- "$ENGINE")"' in text
+    assert 'ENGINE_NAME="$(basename -- "$ENGINE")"' in text
     assert 'env -i PATH=' in text
     assert "GATEWAY_TOKEN" in text
+    assert 'command -v timeout' in text
+    assert '--kill-after=5s' in text
+    assert 'CONTAINER_ATTEMPTED=true' in text
+    assert 'NETWORK_ATTEMPTED=true' in text
+    assert 'image rm --force "$IMAGE"' in text
+
+
+def test_apparmor_option_is_fail_closed_and_does_not_claim_unverified_enforcement() -> None:
+    text = HARNESS.read_text(encoding="utf-8")
+
+    assert '"$APPARMOR_PROFILE"' in text
+    assert "/sys/module/apparmor/parameters/enabled" in text
+    assert "/sys/kernel/security/apparmor/profiles" in text
+    assert "profile is not loaded" in text
+    assert "profile loaded and attached" in text
+    assert "AppArmor enforcement: not requested (host support detected)" in text
+    assert "AppArmor enforcement: unavailable (not requested)" in text
+    assert "AppArmor enforcement: ${APPARMOR_PROFILE}" not in text
 
 
 def test_mirror_release_probe_is_bounded_without_changing_outer_e2e_timeout() -> None:

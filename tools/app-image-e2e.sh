@@ -16,6 +16,9 @@ SUPERVISOR_HOOK=""
 INTEGRATION_HOOK=""
 KEEP="false"
 TOKEN="local-e2e-gateway-token"
+BUILD_TIMEOUT_SECONDS=300
+ENGINE_TIMEOUT_SECONDS=30
+CLEANUP_TIMEOUT_SECONDS=15
 
 usage() {
   cat <<'EOF'
@@ -59,18 +62,63 @@ if [[ -z "$ENGINE" ]]; then
   fi
 fi
 command -v "$ENGINE" >/dev/null 2>&1 || { echo "container engine not found: $ENGINE" >&2; exit 127; }
-case "$(basename -- "$ENGINE")" in
+ENGINE_NAME="$(basename -- "$ENGINE")"
+if [[ "$ENGINE" == podman ]]; then
+  ENGINE_NAME=podman
+fi
+case "$ENGINE_NAME" in
   docker|podman) ;;
   *) echo "unsupported container engine: $ENGINE (use docker or podman)" >&2; exit 2 ;;
 esac
+TIMEOUT_BIN="$(command -v timeout || true)"
+[[ -n "$TIMEOUT_BIN" ]] || { echo "GNU timeout is required to bound image build and cleanup operations" >&2; exit 127; }
 
 IMAGE="localhost/ha-switchboard-local:${VERSION}-${ARCH}"
 RUN_NAME="ha-switchboard-e2e-$$"
 NETWORK="ha-switchboard-e2e-$$"
 DATA_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ha-switchboard-e2e.XXXXXX")"
 chmod 0755 "$DATA_DIR"
-NETWORK_CREATED=false
-CONTAINER_CREATED=false
+NETWORK_ATTEMPTED=false
+CONTAINER_ATTEMPTED=false
+IMAGE_BUILT=false
+
+run_bounded() {
+  local duration=$1
+  shift
+  "$TIMEOUT_BIN" --kill-after=5s "$duration" "$@"
+}
+
+engine_command() {
+  local duration=$1
+  shift
+  run_bounded "$duration" "$ENGINE" "$@"
+}
+
+resource_exists() {
+  local kind=$1 name=$2
+  if [[ "$kind" == container ]]; then
+    engine_command "$CLEANUP_TIMEOUT_SECONDS" inspect "$name" >/dev/null 2>&1
+  else
+    engine_command "$CLEANUP_TIMEOUT_SECONDS" network inspect "$name" >/dev/null 2>&1
+  fi
+}
+
+remove_resource() {
+  local kind=$1 name=$2
+  resource_exists "$kind" "$name"
+  local inspect_result=$?
+  if (( inspect_result == 0 )); then
+    if [[ "$kind" == container ]]; then
+      engine_command "$CLEANUP_TIMEOUT_SECONDS" rm --force "$name" >/dev/null 2>&1
+    else
+      engine_command "$CLEANUP_TIMEOUT_SECONDS" network rm "$name" >/dev/null 2>&1
+    fi
+    return $?
+  fi
+  # Docker and Podman both use status 1 for a missing named resource. Any
+  # other status means the bounded inspection itself failed, so fail closed.
+  [[ "$inspect_result" == 1 ]]
+}
 
 cleanup() {
   local result=$?
@@ -81,25 +129,30 @@ cleanup() {
   trap - EXIT
   set +e
   local cleanup_failed=0
-  if [[ "$CONTAINER_CREATED" == true ]]; then
-    "$ENGINE" rm --force "$RUN_NAME" >/dev/null 2>&1 || cleanup_failed=1
+  if [[ "$CONTAINER_ATTEMPTED" == true ]]; then
+    remove_resource container "$RUN_NAME" || cleanup_failed=1
   fi
-  if [[ "$NETWORK_CREATED" == true ]]; then
-    "$ENGINE" network rm "$NETWORK" >/dev/null 2>&1 || cleanup_failed=1
+  if [[ "$NETWORK_ATTEMPTED" == true ]]; then
+    remove_resource network "$NETWORK" || cleanup_failed=1
   fi
-  if [[ "$ENGINE" == podman ]]; then
+  if [[ "$ENGINE_NAME" == podman ]]; then
     # Rootless Podman maps container UID 65532 to a subordinate host UID.
-    "$ENGINE" unshare rm -r -- "$DATA_DIR" >/dev/null 2>&1 || cleanup_failed=1
+    engine_command "$CLEANUP_TIMEOUT_SECONDS" unshare rm -r -- "$DATA_DIR" >/dev/null 2>&1 || cleanup_failed=1
   else
     # Docker leaves the bind mount owned by the dropped runtime UID.
-    "$ENGINE" run --rm --user 0 \
-      --mount "type=bind,src=${DATA_DIR},dst=/data" \
-      --entrypoint chown "$IMAGE" "$(id -u):$(id -g)" /data >/dev/null 2>&1 || cleanup_failed=1
-    rm -r -- "$DATA_DIR" >/dev/null 2>&1 || cleanup_failed=1
+    if [[ "$IMAGE_BUILT" == true && "$CONTAINER_ATTEMPTED" == true ]]; then
+      engine_command "$CLEANUP_TIMEOUT_SECONDS" run --rm --user 0 \
+        --mount "type=bind,src=${DATA_DIR},dst=/data" \
+        --entrypoint chown "$IMAGE" "$(id -u):$(id -g)" /data >/dev/null 2>&1 || cleanup_failed=1
+    fi
+    run_bounded "$CLEANUP_TIMEOUT_SECONDS" rm -r -- "$DATA_DIR" >/dev/null 2>&1 || cleanup_failed=1
   fi
   if [[ -e "$DATA_DIR" ]]; then
     echo "E2E cleanup failed; data remains at $DATA_DIR" >&2
     cleanup_failed=1
+  fi
+  if [[ "$IMAGE_BUILT" == true ]]; then
+    engine_command "$CLEANUP_TIMEOUT_SECONDS" image rm --force "$IMAGE" >/dev/null 2>&1 || cleanup_failed=1
   fi
   if (( cleanup_failed )); then
     echo "E2E cleanup failed; inspect container=$RUN_NAME network=$NETWORK" >&2
@@ -111,17 +164,18 @@ trap cleanup EXIT
 
 echo "== build current source: $ROOT_DIR/app -> $IMAGE"
 BUILD_PULL_ARGS=()
-if [[ "$ENGINE" == podman ]]; then
+if [[ "$ENGINE_NAME" == podman ]]; then
   BUILD_PULL_ARGS=(--pull=missing)
 fi
-"$ENGINE" build "${BUILD_PULL_ARGS[@]}" --platform "linux/${ARCH}" \
+engine_command "$BUILD_TIMEOUT_SECONDS" build "${BUILD_PULL_ARGS[@]}" --platform "linux/${ARCH}" \
   --tag "$IMAGE" \
   --label "ha-switchboard.source=local:${VERSION}" \
   --build-arg "BUILD_VERSION=${VERSION}" \
   --build-arg "BUILD_ARCH=${HA_ARCH}" \
   "$ROOT_DIR/app"
+IMAGE_BUILT=true
 
-inspect_json="$($ENGINE image inspect "$IMAGE")"
+inspect_json="$(engine_command "$ENGINE_TIMEOUT_SECONDS" image inspect "$IMAGE")"
 readarray -t image_facts < <(python3 -c '
 import json, sys
 image = json.load(sys.stdin)[0]
@@ -139,25 +193,52 @@ print(labels.get("ha-switchboard.source", ""))
 
 SECURITY_OPT=()
 if [[ -n "$APPARMOR_PROFILE" ]]; then
+  if [[ ! -r /sys/module/apparmor/parameters/enabled || "$(< /sys/module/apparmor/parameters/enabled)" != Y || ! -r /sys/kernel/security/apparmor/profiles ]]; then
+    echo "AppArmor enforcement: unavailable (host AppArmor interface is not available)" >&2
+    exit 2
+  fi
+  if ! awk -v wanted="$APPARMOR_PROFILE" '$1 == wanted { found = 1 } END { exit found ? 0 : 1 }' /sys/kernel/security/apparmor/profiles; then
+    echo "AppArmor enforcement: unavailable (profile is not loaded: $APPARMOR_PROFILE)" >&2
+    exit 2
+  fi
   SECURITY_OPT=(--security-opt "apparmor=${APPARMOR_PROFILE}")
-  echo "AppArmor enforcement: ${APPARMOR_PROFILE}"
+  echo "AppArmor enforcement requested: ${APPARMOR_PROFILE}"
 else
-  echo "AppArmor enforcement: not requested"
+  if [[ -r /sys/module/apparmor/parameters/enabled && "$(< /sys/module/apparmor/parameters/enabled)" == Y ]]; then
+    echo "AppArmor enforcement: not requested (host support detected)"
+  else
+    echo "AppArmor enforcement: unavailable (not requested)"
+  fi
 fi
 
-"$ENGINE" network create --subnet 172.30.32.0/24 --gateway 172.30.32.1 "$NETWORK" >/dev/null
-NETWORK_CREATED=true
-"$ENGINE" run --detach --name "$RUN_NAME" \
+NETWORK_ATTEMPTED=true
+engine_command "$ENGINE_TIMEOUT_SECONDS" network create --subnet 172.30.32.0/24 --gateway 172.30.32.1 "$NETWORK" >/dev/null
+CONTAINER_ATTEMPTED=true
+engine_command "$ENGINE_TIMEOUT_SECONDS" run --detach --name "$RUN_NAME" \
   --network "$NETWORK" --ip 172.30.32.3 \
   --volume "$DATA_DIR:/data" \
   --env GATEWAY_TOKEN="$TOKEN" \
   --env HA_SWITCHBOARD_INGRESS_ONLY=true \
   "${SECURITY_OPT[@]}" "$IMAGE" >/dev/null
-CONTAINER_CREATED=true
+
+if [[ -n "$APPARMOR_PROFILE" ]]; then
+  security_json="$(engine_command "$ENGINE_TIMEOUT_SECONDS" inspect "$RUN_NAME")"
+  python3 -c '
+import json
+import sys
+
+profile = sys.argv[1]
+payload = json.load(sys.stdin)[0]
+options = payload.get("HostConfig", {}).get("SecurityOpt") or []
+if f"apparmor={profile}" not in options:
+    raise SystemExit("requested AppArmor profile was not attached to the container")
+' "$APPARMOR_PROFILE" <<<"$security_json"
+  echo "AppArmor enforcement: profile loaded and attached"
+fi
 
 request_code() {
   local client_ip="$1" path="$2" supplied_token="${3:-}"
-  "$ENGINE" run --rm --network "$NETWORK" --ip "$client_ip" --entrypoint python3 "$IMAGE" -c '
+  engine_command "$ENGINE_TIMEOUT_SECONDS" run --rm --network "$NETWORK" --ip "$client_ip" --entrypoint python3 "$IMAGE" -c '
 import sys, urllib.error, urllib.request
 url = "http://" + sys.argv[1] + sys.argv[2]
 headers = {"Authorization": "Bearer " + sys.argv[3]} if sys.argv[3] else {}
@@ -184,7 +265,7 @@ wait_for_code() {
 }
 
 wait_for_code 172.30.32.2 /healthz 200
-container_user="$($ENGINE exec "$RUN_NAME" awk '/^Uid:/ {print $2}' /proc/1/status):$($ENGINE exec "$RUN_NAME" awk '/^Gid:/ {print $2}' /proc/1/status)"
+container_user="$(engine_command "$ENGINE_TIMEOUT_SECONDS" exec "$RUN_NAME" awk '/^Uid:/ {print $2}' /proc/1/status):$(engine_command "$ENGINE_TIMEOUT_SECONDS" exec "$RUN_NAME" awk '/^Gid:/ {print $2}' /proc/1/status)"
 [[ "$container_user" == "65532:65532" ]] || { echo "runtime user mismatch: $container_user" >&2; exit 1; }
 [[ "$(request_code 172.30.32.4 /)" == 403 ]] || { echo "direct UI was not rejected" >&2; exit 1; }
 [[ "$(request_code 172.30.32.4 /healthz)" == 200 ]] || { echo "healthz failed" >&2; exit 1; }
@@ -210,4 +291,4 @@ run_hook() {
 run_hook supervisor-discovery "$SUPERVISOR_HOOK"
 run_hook integration-e2e "$INTEGRATION_HOOK"
 
-echo "PASS: local source build, non-root runtime, AppArmor option, ingress, and token API contract"
+echo "PASS: local source build, non-root runtime, ingress, token API contract, and bounded cleanup"
