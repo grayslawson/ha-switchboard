@@ -6,6 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
 HARNESS = ROOT / "tools" / "app-image-e2e.sh"
+MIRROR_WORKFLOW = ROOT / ".forgejo" / "workflows" / "mirror-public.yml"
 
 
 def test_image_e2e_harness_is_bounded_and_fail_closed() -> None:
@@ -13,12 +14,28 @@ def test_image_e2e_harness_is_bounded_and_fail_closed() -> None:
 
     assert HARNESS.stat().st_mode & 0o111
     assert "for _ in {1..5}" in text
+    assert "timeout=3" in text
+    assert "sleep 0.5" in text
     assert "while true" not in text
     assert "cleanup_failed=1" in text
     assert '[[ -e "$DATA_DIR" ]]' in text
     assert 'case "$(basename -- "$ENGINE")"' in text
     assert 'env -i PATH=' in text
     assert "GATEWAY_TOKEN" in text
+
+
+def test_mirror_release_probe_is_bounded_without_changing_outer_e2e_timeout() -> None:
+    text = MIRROR_WORKFLOW.read_text(encoding="utf-8")
+    probe_start = text.index("Gate release on matching multi-architecture App image")
+    e2e_start = text.index("Run bounded App image E2E gate before tag publication")
+    probe = text[probe_start:e2e_start]
+
+    assert "for attempt in {1..3}; do" in probe
+    assert "for attempt in {1..18}; do" not in probe
+    assert 'if [ "$attempt" -eq 3 ]; then' in probe
+    assert "matching App image was not published within 30 seconds" in probe
+    assert "sleep 10" in probe
+    assert "timeout --kill-after=10s 300s bash tools/app-image-e2e.sh" in text
 
 
 def test_image_e2e_harness_has_valid_shell_syntax() -> None:

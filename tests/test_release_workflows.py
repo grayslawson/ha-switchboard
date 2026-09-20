@@ -90,7 +90,7 @@ def test_release_publication_requires_static_and_external_metadata_evidence() ->
     assert "hassfest@sha256" in mirror
     assert "hacs/action@sha256" in mirror
     assert "sleep 10" in mirror
-    assert "for attempt in {1..18}" in mirror
+    assert "for attempt in {1..3}" in mirror
 
 
 def test_release_workflows_use_exact_source_revision_and_release_paths() -> None:

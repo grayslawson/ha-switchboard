@@ -53,7 +53,7 @@ def test_release_candidate_evidence_is_bounded_and_secret_sanitized() -> None:
     all_workflows = "\n".join(
         _workflow(path.name) for path in (ROOT / ".forgejo" / "workflows").glob("*.yml")
     )
-    assert "for attempt in {1..18}" in mirror
+    assert "for attempt in {1..3}" in mirror
     assert "sleep 10" in mirror
     assert "timeout=30" in mirror
     assert "set -x" not in all_workflows
