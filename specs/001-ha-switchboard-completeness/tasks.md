@@ -434,8 +434,9 @@ all user stories are implemented.
   path, credentials, query, or fragment), and its regression test is included
   in the 411-test source result. T059 now also supports explicitly supplied
   second-user and natural-TTL opt-ins without changing the safe default or
-  persisting credentials. The current source result is 419 tests with 4
-  expected skips.
+  persisting credentials. The current source result is 423 tests with 4
+  expected skips; the preserve-first/local-acceptance focused suite passes
+  32 tests with one opt-in live skip.
 - Requirements-quality status is separate from implementation status:
   `checklists/completeness.md` is now **57 of 57 checked**. The final five
   criteria were closed against the current migration behavior, reviewed

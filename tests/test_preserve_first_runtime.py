@@ -6,6 +6,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).parents[1]
 FIXTURE = ROOT / "tools" / "local-fixtures"
@@ -51,13 +53,19 @@ def test_startup_inspection_is_read_only_and_returns_only_safe_evidence(monkeypa
     monkeypatch.setattr(
         api,
         "inspect_local_supervisor",
-        lambda: {"supervisor_volume_verified": True},
+        lambda: {
+            "container": "busy_cohen",
+            "supervisor_port": 7123,
+            "supervisor_volume_verified": True,
+            "volume_identity_verified": True,
+            "volume_identity_fingerprint": "0123456789abcdef",
+        },
     )
     monkeypatch.setattr(
         api,
         "read_local_app_options",
         lambda: (
-            {"options_present": True, "configured_fields": {"gateway_token": True}},
+            {"options_present": True, "app_started": True, "configured_fields": {"gateway_token": True}},
             {"gateway_token": "opaque-in-memory-test-value"},
         ),
     )
@@ -71,6 +79,25 @@ def test_startup_inspection_is_read_only_and_returns_only_safe_evidence(monkeypa
     assert result["lifecycle"] == lifecycle_report()
     assert result["options"]["options_present"] is True
     assert "opaque-in-memory-test-value" not in repr(result)
+
+
+def test_startup_readiness_requires_started_app_and_verified_volume(monkeypatch) -> None:
+    api = load_module("local_fixture_api_startup_guard")
+    monkeypatch.setattr(api, "inspect_local_supervisor", lambda: {
+        "container": "busy_cohen",
+        "supervisor_port": 7123,
+        "supervisor_volume_verified": True,
+        "volume_identity_verified": True,
+        "volume_identity_fingerprint": "0123456789abcdef",
+    })
+    monkeypatch.setattr(api, "read_local_app_options", lambda: (
+        {"options_present": True, "app_started": False, "configured_fields": {}},
+        {},
+    ))
+    monkeypatch.setattr(api, "run_core_fixture_command", lambda command: lifecycle_report())
+
+    with pytest.raises(RuntimeError, match="startup evidence is incomplete"):
+        api.startup_check()
 
 
 class _FakeSession:

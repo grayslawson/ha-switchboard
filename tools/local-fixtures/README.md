@@ -60,6 +60,10 @@ docker exec -i busy_cohen docker exec -i homeassistant python3 - failures \
 `startup` and `restart-cycle` are host-side, read-only checks. Run them with
 the direct `python3` form shown above; they verify Docker's disposable
 Supervisor container and then invoke the Core-side lifecycle evidence safely.
+Startup readiness is fail-closed: the Supervisor volume must have the
+canonical preserve-first identity, the App must report `started`, the Core
+conversation agent/config entry must exist, and the gateway profile must be
+active with neither pending sections nor pending invalidations.
 The other commands in the block are Core-side commands and are fed to Core's
 Python process through standard input.
 
@@ -92,7 +96,8 @@ configured local gateway, then polls profile status for a settled active profile
 for at most 12 seconds. It reports only HTTP status, freshness, revision
 presence, counts, and pending-state counts. The endpoint is a
 request/invalidating boundary: the `202` proves acceptance; only the subsequent
-active/no-pending status is reported as settled.
+active/no-pending status with a preserved capability count is reported as
+settled.
 `lifecycle` is a read-only startup/restart snapshot. Run it after a Core or App
 restart to verify the existing config entry, local fixture count, conversation
 agent presence, and redacted gateway profile state. It does not restart,
@@ -169,9 +174,11 @@ Set `HA_SWITCHBOARD_RUN_FOLLOW_UP_NATURAL_EXPIRY=1` as well to wait for the
 Core continuation TTL. The wait is bounded; it is not a clock override. The
 token is forwarded by environment name only, never printed or persisted, and
 the probe does not create or modify Home Assistant users. The deterministic
-source tests cover these boundaries without mutating auth. Do not enable the
-second-user or natural-expiry options until the local fixture's state and the
-test window are explicitly approved.
+source tests cover these boundaries without mutating auth. The optional
+second-user and natural-expiry probes require the exact additional
+`HA_SWITCHBOARD_RUN_FOLLOW_UP=1` authorization, plus the second-user token or
+natural-expiry flag respectively. Do not enable those options until the local
+fixture's state and the test window are explicitly approved.
 
 In the UI, go to **Settings > Voice assistants > HA Switchboard Fixture** and
 check **Conversation agent: HA Switchboard**. To add one manually, use

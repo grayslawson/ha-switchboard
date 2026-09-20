@@ -58,7 +58,7 @@ def test_restart_cycle_is_read_only_without_explicit_opt_in(monkeypatch) -> None
     monkeypatch.setattr(api, "inspect_local_supervisor", target_report)
     monkeypatch.setattr(api, "run_core_fixture_command", lambda command: report)
     monkeypatch.setattr(api, "read_local_app_options", lambda: (
-        {"options_present": True, "configured_fields": {"gateway_token": True}},
+        {"options_present": True, "app_started": True, "configured_fields": {"gateway_token": True}},
         {"gateway_token": "secret-in-memory-only"},
     ))
     monkeypatch.setattr(
@@ -75,6 +75,28 @@ def test_restart_cycle_is_read_only_without_explicit_opt_in(monkeypatch) -> None
     assert "secret-in-memory-only" not in repr(result)
 
 
+def test_restart_rejects_an_unverified_target_before_any_mutation(monkeypatch) -> None:
+    api = load_module("local_fixture_api_restart_target_guard")
+    commands: list[list[str]] = []
+    monkeypatch.setattr(api, "inspect_local_supervisor", lambda: {
+        "container": "busy_cohen",
+        "supervisor_port": 7123,
+        "supervisor_volume_verified": True,
+        "volume_identity_verified": False,
+    })
+    monkeypatch.setattr(api, "run_core_fixture_command", lambda command: lifecycle_report())
+    monkeypatch.setattr(api, "read_local_app_options", lambda: (
+        {"options_present": True, "app_started": True, "configured_fields": {}},
+        {},
+    ))
+    monkeypatch.setattr(api, "run_host_command", lambda args, **kwargs: commands.append(args) or "")
+
+    with pytest.raises(RuntimeError, match="verified local Supervisor volume identity"):
+        api.restart_cycle(allow_restart=True)
+
+    assert commands == []
+
+
 def test_restart_cycle_requires_the_existing_switchboard_state(monkeypatch) -> None:
     api = load_module("local_fixture_api_restart_guard")
     monkeypatch.setattr(api, "inspect_local_supervisor", target_report)
@@ -84,7 +106,7 @@ def test_restart_cycle_requires_the_existing_switchboard_state(monkeypatch) -> N
         "gateway": {},
     })
     monkeypatch.setattr(api, "read_local_app_options", lambda: (
-        {"options_present": True, "configured_fields": {}},
+        {"options_present": True, "app_started": True, "configured_fields": {}},
         {"gateway_token": "secret-in-memory-only"},
     ))
 
@@ -100,7 +122,7 @@ def test_restart_cycle_requires_the_existing_switchboard_state(monkeypatch) -> N
                 **lifecycle_report(),
                 "core": {"fixture_entity_count": 28, "conversation_agent_present": False},
             },
-            {"options_present": True, "configured_fields": {}},
+            {"options_present": True, "app_started": True, "configured_fields": {}},
             "existing Switchboard conversation agent",
         ),
         (
@@ -140,7 +162,7 @@ def test_authorized_restart_reports_preservation_invariants_without_real_host_co
     commands: list[list[str]] = []
     waits: list[str] = []
     reports = [lifecycle_report(), lifecycle_report(), lifecycle_report()]
-    options = {"options_present": True, "configured_fields": {"gateway_token": True}}
+    options = {"options_present": True, "app_started": True, "configured_fields": {"gateway_token": True}}
     private_options = {"gateway_token": "opaque-in-memory-test-value"}
 
     monkeypatch.setattr(
@@ -173,6 +195,7 @@ def test_authorized_restart_reports_preservation_invariants_without_real_host_co
     assert result["restart_performed"] is True
     assert result["preserved"] == {
         "options": True,
+        "app_restart_preserved": True,
         "config_entry": True,
         "fixture_count": True,
         "conversation_agent": True,
@@ -181,6 +204,29 @@ def test_authorized_restart_reports_preservation_invariants_without_real_host_co
     }
     assert result["complete"] is True
     assert "opaque-in-memory-test-value" not in repr(result)
+
+
+def test_restart_stops_before_core_when_app_restart_loses_anchors(monkeypatch) -> None:
+    api = load_module("local_fixture_api_restart_anchor_guard")
+    commands: list[list[str]] = []
+    reports = [
+        lifecycle_report(),
+        {**lifecycle_report(), "config_entry": {"domain": "other"}},
+    ]
+    monkeypatch.setattr(api, "inspect_local_supervisor", target_report)
+    monkeypatch.setattr(api, "run_core_fixture_command", lambda command: reports.pop(0))
+    monkeypatch.setattr(api, "read_local_app_options", lambda: (
+        {"options_present": True, "app_started": True, "configured_fields": {}},
+        {},
+    ))
+    monkeypatch.setattr(api, "run_host_command", lambda args, **kwargs: commands.append(args) or "")
+    monkeypatch.setattr(api, "wait_for_local_component", lambda *args, **kwargs: None)
+
+    with pytest.raises(RuntimeError, match="preserve config entry and fixture anchors"):
+        api.restart_cycle(allow_restart=True)
+
+    assert len(commands) == 1
+    assert commands[0][-2:] == ["restart", api.LOCAL_APP_SLUG]
 
 
 def test_cli_requires_explicit_restart_flag_and_rejects_it_elsewhere() -> None:
@@ -245,11 +291,11 @@ def test_volume_identity_requires_a_named_volume_with_matching_source() -> None:
 
 def test_restart_rejects_volume_identity_change_before_reporting_success(monkeypatch) -> None:
     api = load_module("local_fixture_api_restart_volume_change")
-    targets = iter((target_report("before"), target_report("after-app")))
+    targets = iter((target_report("0123456789abcdef"), target_report("fedcba9876543210")))
     monkeypatch.setattr(api, "inspect_local_supervisor", lambda: next(targets))
     monkeypatch.setattr(api, "run_core_fixture_command", lambda command: lifecycle_report())
     monkeypatch.setattr(api, "read_local_app_options", lambda: (
-        {"options_present": True, "configured_fields": {"gateway_token": True}},
+        {"options_present": True, "app_started": True, "configured_fields": {"gateway_token": True}},
         {"gateway_token": "secret-in-memory-only"},
     ))
     monkeypatch.setattr(api, "run_host_command", lambda *args, **kwargs: "")
@@ -300,3 +346,13 @@ def test_scan_invariants_require_bounded_settled_before_and_after_profiles() -> 
 
     unsettled = {**before, "status": "stale"}
     assert api.scan_invariant_report(unsettled, after, 202, True)["complete"] is False
+    pending = {**before, "monitor": {"pending_sections": [], "pending_invalidations": ["entities"]}}
+    assert api.scan_invariant_report(pending, after, 202, True)["complete"] is False
+    changed = {**before, "capability_count": 2}
+    assert api.scan_invariant_report(before, changed, 202, True)["complete"] is False
+
+
+def test_component_wait_rejects_unknown_components() -> None:
+    api = load_module("local_fixture_api_component_guard")
+    with pytest.raises(RuntimeError, match="unsupported local component"):
+        api.wait_for_local_component("supervisor")

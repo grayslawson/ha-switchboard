@@ -35,6 +35,7 @@ ASSIST_FOLLOW_UP_TIMEOUT_SECONDS = 30
 ASSIST_FOLLOW_UP_CONVERSATION = "fixture-follow-up"
 FOLLOW_UP_SECOND_USER_ACCESS_TOKEN_ENV = "HA_SWITCHBOARD_FOLLOW_UP_SECOND_USER_ACCESS_TOKEN"
 FOLLOW_UP_NATURAL_EXPIRY_ENV = "HA_SWITCHBOARD_RUN_FOLLOW_UP_NATURAL_EXPIRY"
+FOLLOW_UP_RUN_OPT_IN_ENV = "HA_SWITCHBOARD_RUN_FOLLOW_UP"
 # ConversationContextStore's production default is 120 seconds.  The small
 # safety margin gives Core time to expire the entry without permitting an
 # unbounded wait in this fixture probe.
@@ -368,9 +369,13 @@ def lifecycle_report(config: dict, states: dict[str, dict], profile: dict) -> di
 
 
 def profile_is_settled(status: dict) -> bool:
-    """Return true only for an active profile with no pending sections."""
+    """Return true only for an active profile with no pending work."""
     report = profile_status_report(status)
-    return report["status"] == "active" and report["pending_section_count"] == 0
+    return (
+        report["status"] == "active"
+        and report["pending_section_count"] == 0
+        and report["pending_invalidation_count"] == 0
+    )
 
 
 def scan_invariant_report(before: dict, after: dict, request_status: int, settled: bool) -> dict:
@@ -392,6 +397,11 @@ def scan_invariant_report(before: dict, after: dict, request_status: int, settle
             and settled
             and profile_is_settled(before)
             and profile_is_settled(after)
+            and (
+                isinstance(before_report["capability_count"], int)
+                and isinstance(after_report["capability_count"], int)
+                and before_report["capability_count"] == after_report["capability_count"]
+            )
         ),
     }
 
@@ -449,8 +459,23 @@ def supervisor_options_report(options: dict) -> dict:
     )
     return {
         "options_present": bool(options),
+        "app_started": None,
         "configured_fields": {field: bool(options.get(field)) for field in fields},
     }
+
+
+def target_identity_is_verified(target: dict) -> bool:
+    """Require the canonical disposable target and a usable volume fingerprint."""
+    fingerprint = target.get("volume_identity_fingerprint")
+    return (
+        target.get("container") == LOCAL_SUPERVISOR_CONTAINER
+        and target.get("supervisor_port") == LOCAL_SUPERVISOR_PORT
+        and target.get("supervisor_volume_verified") is True
+        and target.get("volume_identity_verified") is True
+        and isinstance(fingerprint, str)
+        and len(fingerprint) == 16
+        and all(character in "0123456789abcdef" for character in fingerprint)
+    )
 
 
 def validate_local_supervisor_inspect(inspect: dict) -> dict:
@@ -602,10 +627,15 @@ def read_local_app_options() -> tuple[dict, dict]:
     )
     try:
         payload = json.loads(output)
-        options = payload["data"]["options"]
+        data = payload["data"]
+        options = data["options"]
+        app_state = data["state"]
     except (KeyError, TypeError, json.JSONDecodeError):
         raise RuntimeError("Local App options were not available") from None
-    return supervisor_options_report(options), dict(options)
+    report = supervisor_options_report(options)
+    report["app_state"] = app_state
+    report["app_started"] = app_state == "started"
+    return report, dict(options)
 
 
 def startup_check() -> dict:
@@ -614,12 +644,15 @@ def startup_check() -> dict:
     options, _private_options = read_local_app_options()
     lifecycle = run_core_fixture_command("lifecycle")
     ready = (
-        lifecycle["config_entry"]["domain"] == "ha_switchboard"
+        target_identity_is_verified(target)
+        and lifecycle["config_entry"]["domain"] == "ha_switchboard"
         and lifecycle["core"]["conversation_agent_present"]
         and lifecycle["gateway"]["status"] == "active"
         and lifecycle["gateway"]["has_revision"]
         and lifecycle["gateway"]["pending_section_count"] == 0
+        and lifecycle["gateway"]["pending_invalidation_count"] == 0
         and options["options_present"]
+        and options["app_started"] is True
     )
     if not ready:
         raise RuntimeError("Local startup evidence is incomplete")
@@ -635,6 +668,8 @@ def startup_check() -> dict:
 
 def wait_for_local_component(component: str, *, timeout: float = RESTART_WAIT_SECONDS) -> None:
     """Wait for one local Supervisor-managed component with a hard deadline."""
+    if component not in {"app", "core"}:
+        raise RuntimeError(f"unsupported local component: {component}")
     deadline = time.monotonic() + bounded_timeout(timeout, RESTART_WAIT_SECONDS)
     while time.monotonic() < deadline:
         remaining = deadline - time.monotonic()
@@ -664,7 +699,7 @@ def restart_cycle(*, allow_restart: bool) -> dict:
     target = inspect_local_supervisor()
     before_lifecycle = run_core_fixture_command("lifecycle")
     before_options, before_options_private = read_local_app_options()
-    if not target.get("supervisor_volume_verified") or not target.get("volume_identity_verified"):
+    if not target_identity_is_verified(target):
         raise RuntimeError("Refusing restart without verified local Supervisor volume identity")
     if not allow_restart:
         return {
@@ -682,7 +717,7 @@ def restart_cycle(*, allow_restart: bool) -> dict:
         raise RuntimeError("Refusing restart without the existing Switchboard config entry")
     if not before_lifecycle["core"]["conversation_agent_present"]:
         raise RuntimeError("Refusing restart without the existing Switchboard conversation agent")
-    if not before_options["options_present"]:
+    if not before_options["options_present"] or before_options.get("app_started") is not True:
         raise RuntimeError("Refusing restart without existing local App options")
     if before_lifecycle["core"].get("fixture_entity_count", 0) <= 0:
         raise RuntimeError("Refusing restart without existing fixture entities")
@@ -690,6 +725,7 @@ def restart_cycle(*, allow_restart: bool) -> dict:
         before_lifecycle["gateway"].get("status") != "active"
         or not before_lifecycle["gateway"].get("has_revision")
         or before_lifecycle["gateway"].get("pending_section_count") != 0
+        or before_lifecycle["gateway"].get("pending_invalidation_count") != 0
     ):
         raise RuntimeError("Refusing restart with an unsettled Switchboard profile")
 
@@ -710,6 +746,12 @@ def restart_cycle(*, allow_restart: bool) -> dict:
     if after_app_target.get("volume_identity_fingerprint") != target.get("volume_identity_fingerprint"):
         raise RuntimeError("Refusing to continue after local Supervisor volume identity changed")
     after_app_lifecycle = run_core_fixture_command("lifecycle")
+    app_restart_preserved = (
+        before_lifecycle["config_entry"] == after_app_lifecycle["config_entry"]
+        and before_lifecycle["core"] == after_app_lifecycle["core"]
+    )
+    if not app_restart_preserved:
+        raise RuntimeError("Local App restart did not preserve config entry and fixture anchors")
 
     run_host_command(
         ["docker", "exec", LOCAL_SUPERVISOR_CONTAINER, "ha", "core", "restart", "--raw-json"],
@@ -724,6 +766,7 @@ def restart_cycle(*, allow_restart: bool) -> dict:
 
     preserved = {
         "options": before_options_private == after_options_private,
+        "app_restart_preserved": app_restart_preserved,
         "config_entry": before_lifecycle["config_entry"] == after_lifecycle["config_entry"],
         "fixture_count": before_lifecycle["core"]["fixture_entity_count"] == after_lifecycle["core"]["fixture_entity_count"],
         "conversation_agent": after_lifecycle["core"]["conversation_agent_present"],
@@ -775,9 +818,49 @@ def temporary_token() -> str:
     )
 
 
+def owner_user_id() -> str:
+    """Return the existing owner's ID in memory without emitting auth data."""
+    try:
+        data = json.loads(Path("/config/.storage/auth").read_text())["data"]
+        users = {user["id"]: user for user in data["users"]}
+        candidates = [
+            token for token in data["refresh_tokens"]
+            if token["token_type"] == "long_lived_access_token"
+            and users.get(token["user_id"], {}).get("is_owner")
+        ]
+        user_id = candidates[0]["user_id"] if len(candidates) == 1 else None
+    except (KeyError, TypeError, json.JSONDecodeError, OSError):
+        user_id = None
+    if not isinstance(user_id, str) or not user_id:
+        raise RuntimeError("existing local owner identity could not be verified")
+    return user_id
+
+
+def access_token_user_id(access_token: str) -> str:
+    """Map an already-authenticated HA access token to its existing user."""
+    import jwt
+
+    try:
+        claims = jwt.decode(access_token, options={"verify_signature": False})
+        issuer = claims.get("iss")
+        data = json.loads(Path("/config/.storage/auth").read_text())["data"]
+        matches = [
+            item for item in data["refresh_tokens"]
+            if item.get("id") == issuer
+        ]
+        user_id = matches[0].get("user_id") if len(matches) == 1 else None
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError, OSError):
+        user_id = None
+    if not isinstance(user_id, str) or not user_id:
+        raise RuntimeError("supplied second-user identity could not be verified")
+    return user_id
+
+
 def follow_up_opt_ins(environ: Mapping[str, str] | None = None) -> tuple[str | None, bool]:
-    """Read the two explicit follow-up opt-ins without putting them in evidence."""
+    """Read optional follow-up gates only after explicit live-probe authorization."""
     source = os.environ if environ is None else environ
+    if source.get(FOLLOW_UP_RUN_OPT_IN_ENV) != "1":
+        return None, False
     second_user_token = source.get(FOLLOW_UP_SECOND_USER_ACCESS_TOKEN_ENV, "").strip() or None
     natural_expiry = source.get(FOLLOW_UP_NATURAL_EXPIRY_ENV) == "1"
     return second_user_token, natural_expiry
@@ -862,6 +945,7 @@ async def assist_pipeline_turn(
     deadline = time.monotonic() + ASSIST_FOLLOW_UP_TIMEOUT_SECONDS
     event_types: list[str] = []
     observed_conversation_id: str | None = None
+    continuation_requested: bool | None = None
     for _ in range(ASSIST_MAX_EVENTS):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -879,8 +963,13 @@ async def assist_pipeline_turn(
             continue
         if event.get("type") != "event":
             continue
-        event_type = str(event.get("event", {}).get("type", "unknown"))
+        event_data = event.get("event", {})
+        event_type = str(event_data.get("type", "unknown"))
         event_types.append(event_type)
+        if event_type == "intent-end":
+            intent_output = (event_data.get("data") or {}).get("intent_output") or {}
+            value = intent_output.get("continue_conversation")
+            continuation_requested = value if isinstance(value, bool) else None
         if event_type in {"run-end", "error"}:
             if event_type == "error":
                 raise RuntimeError("Assist follow-up pipeline emitted an error")
@@ -889,6 +978,7 @@ async def assist_pipeline_turn(
                 "conversation_id_observed": observed_conversation_id is not None,
                 "requested_conversation_id": conversation_id,
                 "event_count": len(event_types),
+                "continuation_requested": continuation_requested,
                 "completed": True,
             }
     raise RuntimeError("Assist follow-up did not complete within the bounded deadline")
@@ -1396,6 +1486,8 @@ async def main(command: str) -> None:
                     return str(payload.get("state", "unknown"))
 
                 before_state = await state_of(lock_entity)
+                if before_state != "locked":
+                    raise RuntimeError("fixture lock must start locked for follow-up evidence")
                 first = await assist_pipeline_turn(
                     ws, ours[0]["id"],
                     "Unlock the Switchboard Fixture lock.", conversation_id,
@@ -1409,17 +1501,22 @@ async def main(command: str) -> None:
                 same_id = all(item == conversation_id for item in observed_ids)
                 conversation_status = (
                     "proved"
-                    if same_id
+                    if same_id and first.get("continuation_requested") is True
                     else "unavailable"
                     if not any(observed_ids)
                     else "failed"
                 )
                 different_user = {
                     "status": "unavailable",
-                    "reason": "requires a second existing HA user token; no auth mutation is performed",
+                    "reason": (
+                        "requires a second existing HA user token and explicit "
+                        "HA_SWITCHBOARD_RUN_FOLLOW_UP=1 authorization; no auth mutation is performed"
+                    ),
                 }
                 if second_user_token is not None:
                     try:
+                        if access_token_user_id(second_user_token) == owner_user_id():
+                            raise RuntimeError("second-user token belongs to the existing owner")
                         cross_user_conversation = "fixture-follow-up-cross-user"
                         cross_before_state = await state_of(lock_entity)
                         cross_first = await assist_pipeline_turn(
@@ -1441,10 +1538,19 @@ async def main(command: str) -> None:
                             item.get("conversation_id") == cross_user_conversation
                             for item in (cross_first, cross_follow_up)
                         )
+                        cross_follow_up_refused = (
+                            cross_first.get("continuation_requested") is True
+                            and cross_follow_up.get("continuation_requested") is False
+                        )
                         cross_unchanged = cross_before_state == cross_after_state
                         different_user = {
-                            "status": "proved" if cross_conversation_reused and cross_unchanged else "failed",
+                            "status": (
+                                "proved"
+                                if cross_conversation_reused and cross_follow_up_refused and cross_unchanged
+                                else "failed"
+                            ),
                             "conversation_reused": cross_conversation_reused,
+                            "follow_up_refused": cross_follow_up_refused,
                             "state_unchanged": cross_unchanged,
                         }
                     except Exception:
@@ -1452,12 +1558,15 @@ async def main(command: str) -> None:
                         # Core's user/entity references in fixture evidence.
                         different_user = {
                             "status": "failed",
-                            "reason": "second-user follow-up did not complete within the bounded probe",
+                            "reason": "second-user identity or follow-up did not complete within the bounded probe",
                         }
 
                 expiry = {
                     "status": "unavailable",
-                    "reason": "requires waiting for the Core continuation TTL; covered by the bounded clock-controlled test",
+                    "reason": (
+                        "requires explicit HA_SWITCHBOARD_RUN_FOLLOW_UP=1 authorization and "
+                        "waiting for the Core continuation TTL; covered by the bounded clock-controlled test"
+                    ),
                 }
                 if run_natural_expiry:
                     try:
@@ -1481,10 +1590,19 @@ async def main(command: str) -> None:
                             item.get("conversation_id") == expiry_conversation
                             for item in (expiry_first, expiry_follow_up)
                         )
+                        expiry_follow_up_refused = (
+                            expiry_first.get("continuation_requested") is True
+                            and expiry_follow_up.get("continuation_requested") is False
+                        )
                         expiry_unchanged = expiry_before_state == expiry_after_state
                         expiry = {
-                            "status": "proved" if expiry_conversation_reused and expiry_unchanged else "failed",
+                            "status": (
+                                "proved"
+                                if expiry_conversation_reused and expiry_follow_up_refused and expiry_unchanged
+                                else "failed"
+                            ),
                             "conversation_reused": expiry_conversation_reused,
+                            "follow_up_refused": expiry_follow_up_refused,
                             "state_unchanged": expiry_unchanged,
                             "wait_seconds": waited_seconds,
                         }
@@ -1506,13 +1624,25 @@ async def main(command: str) -> None:
                         ),
                     },
                     "cancellation": {
-                        "status": "proved" if before_state == after_cancel_state else "failed",
-                        "fixture_lock_unchanged": before_state == after_cancel_state,
-                    },
-                    "replay": {
-                        "status": "proved" if after_cancel_state == after_replay_state else "failed",
-                        "fixture_lock_unchanged": after_cancel_state == after_replay_state,
-                    },
+                        "status": (
+                            "proved"
+                            if before_state == after_cancel_state
+                            and cancelled.get("continuation_requested") is False
+                            else "failed"
+                        ),
+                    "fixture_lock_unchanged": before_state == after_cancel_state,
+                    "continuation_requested": cancelled.get("continuation_requested"),
+                },
+                "replay": {
+                    "status": (
+                        "proved"
+                        if after_cancel_state == after_replay_state
+                        and replay.get("continuation_requested") is False
+                        else "failed"
+                    ),
+                    "fixture_lock_unchanged": after_cancel_state == after_replay_state,
+                    "continuation_requested": replay.get("continuation_requested"),
+                },
                     "different_user": different_user,
                     "expiry": expiry,
                     "event_counts": {

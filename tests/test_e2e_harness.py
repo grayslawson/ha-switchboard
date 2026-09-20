@@ -112,14 +112,21 @@ def test_local_startup_evidence_is_read_only_and_secret_free(monkeypatch) -> Non
     lifecycle = {
         "config_entry": {"domain": "ha_switchboard", "source": "hassio", "version": 1, "has_gateway_token": True},
         "core": {"fixture_entity_count": 28, "conversation_agent_present": True},
-        "gateway": {"status": "active", "has_revision": True, "pending_section_count": 0},
+        "gateway": {
+            "status": "active",
+            "has_revision": True,
+            "pending_section_count": 0,
+            "pending_invalidation_count": 0,
+        },
     }
     calls: list[str] = []
     monkeypatch.setattr(api, "inspect_local_supervisor", lambda: {
-        "container": "busy_cohen", "supervisor_port": 7123, "supervisor_volume_verified": True,
+        "container": "busy_cohen", "supervisor_port": 7123,
+        "supervisor_volume_verified": True, "volume_identity_verified": True,
+        "volume_identity_fingerprint": "0123456789abcdef",
     })
     monkeypatch.setattr(api, "read_local_app_options", lambda: (
-        {"options_present": True, "configured_fields": {"gateway_token": True}},
+        {"options_present": True, "app_started": True, "configured_fields": {"gateway_token": True}},
         {"gateway_token": "secret-in-memory-only"},
     ))
     monkeypatch.setattr(api, "run_core_fixture_command", lambda command: calls.append(command) or lifecycle)
@@ -303,6 +310,7 @@ def test_live_follow_up_passes_conversation_id_at_assist_pipeline_boundary() -> 
     assert "ASSIST_FOLLOW_UP_TIMEOUT_SECONDS = 30" in text
     assert 'FOLLOW_UP_SECOND_USER_ACCESS_TOKEN_ENV = "HA_SWITCHBOARD_FOLLOW_UP_SECOND_USER_ACCESS_TOKEN"' in text
     assert 'FOLLOW_UP_NATURAL_EXPIRY_ENV = "HA_SWITCHBOARD_RUN_FOLLOW_UP_NATURAL_EXPIRY"' in text
+    assert 'FOLLOW_UP_RUN_OPT_IN_ENV = "HA_SWITCHBOARD_RUN_FOLLOW_UP"' in text
     assert "FOLLOW_UP_NATURAL_EXPIRY_MAX_WAIT_SECONDS = 150" in text
     assert "for _ in range(ASSIST_MAX_EVENTS)" in text
     assert '"conversation_id": conversation_id' in text
@@ -313,7 +321,7 @@ def test_live_follow_up_passes_conversation_id_at_assist_pipeline_boundary() -> 
     assert "expiry = {" in text
     assert '"status": "unavailable"' in text
     assert "requires a second existing HA user token" in text
-    assert "requires waiting for the Core continuation TTL" in text
+    assert "Core continuation TTL" in text
     assert 'item.get("status") == "failed"' in text
     assert 'raise SystemExit("Assist follow-up fixture evidence failed")' in text
 
@@ -323,6 +331,7 @@ def test_follow_up_opt_ins_are_strict_and_default_to_unavailable(monkeypatch) ->
 
     monkeypatch.delenv(api.FOLLOW_UP_SECOND_USER_ACCESS_TOKEN_ENV, raising=False)
     monkeypatch.delenv(api.FOLLOW_UP_NATURAL_EXPIRY_ENV, raising=False)
+    monkeypatch.delenv(api.FOLLOW_UP_RUN_OPT_IN_ENV, raising=False)
     token, natural_expiry = api.follow_up_opt_ins()
     assert token is None
     assert natural_expiry is False
@@ -331,6 +340,7 @@ def test_follow_up_opt_ins_are_strict_and_default_to_unavailable(monkeypatch) ->
     token, natural_expiry = api.follow_up_opt_ins({
         api.FOLLOW_UP_SECOND_USER_ACCESS_TOKEN_ENV: supplied,
         api.FOLLOW_UP_NATURAL_EXPIRY_ENV: "1",
+        api.FOLLOW_UP_RUN_OPT_IN_ENV: "1",
     })
     assert token == supplied
     assert natural_expiry is True
@@ -338,6 +348,15 @@ def test_follow_up_opt_ins_are_strict_and_default_to_unavailable(monkeypatch) ->
     token, natural_expiry = api.follow_up_opt_ins({
         api.FOLLOW_UP_SECOND_USER_ACCESS_TOKEN_ENV: "  ",
         api.FOLLOW_UP_NATURAL_EXPIRY_ENV: "true",
+        api.FOLLOW_UP_RUN_OPT_IN_ENV: "1",
+    })
+    assert token is None
+    assert natural_expiry is False
+
+    token, natural_expiry = api.follow_up_opt_ins({
+        api.FOLLOW_UP_SECOND_USER_ACCESS_TOKEN_ENV: supplied,
+        api.FOLLOW_UP_NATURAL_EXPIRY_ENV: "1",
+        api.FOLLOW_UP_RUN_OPT_IN_ENV: "yes",
     })
     assert token is None
     assert natural_expiry is False
@@ -369,6 +388,7 @@ def _run_live_follow_up_fixture() -> dict:
     forwarded_names = (
         "HA_SWITCHBOARD_FOLLOW_UP_SECOND_USER_ACCESS_TOKEN",
         "HA_SWITCHBOARD_RUN_FOLLOW_UP_NATURAL_EXPIRY",
+        "HA_SWITCHBOARD_RUN_FOLLOW_UP",
     )
     supplied_token = os.environ.get(forwarded_names[0])
     for name in forwarded_names:
@@ -477,7 +497,7 @@ def test_live_follow_up_fixture_is_bounded_and_reports_unavailable_gates() -> No
     assert report["replay"]["status"] == "proved"
     for name, gate in (
         ("different_user", "requires a second existing HA user token"),
-        ("expiry", "requires waiting for the Core continuation TTL"),
+        ("expiry", "requires explicit HA_SWITCHBOARD_RUN_FOLLOW_UP=1 authorization"),
     ):
         assert report[name]["status"] in {"proved", "unavailable"}
         if report[name]["status"] == "unavailable":
