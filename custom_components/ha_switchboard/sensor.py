@@ -22,7 +22,13 @@ except ImportError:  # pragma: no cover - contract tests run without HA
         _attr_should_poll = True
 
 
-_STATUS_KEYS = frozenset({"status", "stale", "capability_count", "last_reconciled_at"})
+_STATUS_KEYS = frozenset({
+    "status", "stale", "capability_count", "last_reconciled_at",
+    "connected", "scan_state", "last_scan_result", "last_scan_at",
+    "last_scan_error", "scan_generation", "scan_trigger",
+    "last_reconcile_at", "reconcile_count", "warning_count",
+    "entity_count", "routine_count", "service_count", "last_error",
+})
 
 
 def _safe_status(status: Mapping[str, Any]) -> dict[str, Any]:
@@ -31,12 +37,22 @@ def _safe_status(status: Mapping[str, Any]) -> dict[str, Any]:
     safe: dict[str, Any] = {}
     for key in _STATUS_KEYS:
         value = status.get(key)
-        if key in {"status", "last_reconciled_at"} and isinstance(value, str):
+        if key in {
+            "status", "last_reconciled_at", "last_scan_at", "last_scan_error",
+            "scan_trigger", "last_reconcile_at", "last_error",
+        } and isinstance(value, str):
             safe[key] = value[:128]
         elif key == "stale" and isinstance(value, bool):
             safe[key] = value
-        elif key == "capability_count" and isinstance(value, int) and value >= 0:
+        elif key in {
+            "capability_count", "scan_generation", "reconcile_count", "warning_count",
+            "entity_count", "routine_count", "service_count",
+        } and isinstance(value, int) and value >= 0:
             safe[key] = value
+        elif key in {"connected"} and isinstance(value, bool):
+            safe[key] = value
+        elif key in {"scan_state", "last_scan_result"} and isinstance(value, str):
+            safe[key] = value[:32]
     return safe
 
 
@@ -46,8 +62,9 @@ class _SwitchboardDiagnosticSensor(SensorEntity):
     if HA_AVAILABLE:
         _attr_entity_category = EntityCategory.DIAGNOSTIC
 
-    def __init__(self, client: Any, entry_id: str, kind: str) -> None:
+    def __init__(self, client: Any, entry_id: str, kind: str, coordinator: Any = None) -> None:
         self._client = client
+        self._coordinator = coordinator
         self._kind = kind
         self._attr_unique_id = f"{entry_id}_{kind}"
         self._attr_name = {
@@ -73,6 +90,11 @@ class _SwitchboardDiagnosticSensor(SensorEntity):
             self._attr_native_value = None
             self._attr_extra_state_attributes = {}
             return
+        coordinator_status = getattr(self._coordinator, "status", None)
+        if callable(coordinator_status):
+            local_status = coordinator_status()
+            if isinstance(local_status, Mapping):
+                status = {**status, **local_status}
         safe = _safe_status(status)
         self._attr_available = True
         self._attr_extra_state_attributes = safe
@@ -87,7 +109,7 @@ class _SwitchboardDiagnosticSensor(SensorEntity):
             value = status.get("capability_count")
             self._attr_native_value = value if isinstance(value, int) and value >= 0 else 0
         else:
-            value = status.get("last_reconciled_at")
+            value = status.get("last_scan_at") or status.get("last_reconciled_at")
             self._attr_native_value = value if isinstance(value, str) and value else "Never"
 
 
@@ -100,7 +122,10 @@ async def async_setup_entry(
     if runtime is None:
         return
     async_add_entities(
-        [_SwitchboardDiagnosticSensor(runtime.client, entry.entry_id, kind) for kind in ("ready", "capabilities", "last_scan")]
+        [
+            _SwitchboardDiagnosticSensor(runtime.client, entry.entry_id, kind, runtime.coordinator)
+            for kind in ("ready", "capabilities", "last_scan")
+        ]
     )
 
 

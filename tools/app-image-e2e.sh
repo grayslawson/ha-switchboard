@@ -59,30 +59,53 @@ if [[ -z "$ENGINE" ]]; then
   fi
 fi
 command -v "$ENGINE" >/dev/null 2>&1 || { echo "container engine not found: $ENGINE" >&2; exit 127; }
+case "$(basename -- "$ENGINE")" in
+  docker|podman) ;;
+  *) echo "unsupported container engine: $ENGINE (use docker or podman)" >&2; exit 2 ;;
+esac
 
 IMAGE="localhost/ha-switchboard-local:${VERSION}-${ARCH}"
 RUN_NAME="ha-switchboard-e2e-$$"
 NETWORK="ha-switchboard-e2e-$$"
 DATA_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ha-switchboard-e2e.XXXXXX")"
 chmod 0755 "$DATA_DIR"
+NETWORK_CREATED=false
+CONTAINER_CREATED=false
 
 cleanup() {
+  local result=$?
   if [[ "$KEEP" == true ]]; then
     echo "kept validation resources: container=$RUN_NAME network=$NETWORK data=$DATA_DIR"
-    return
+    exit "$result"
   fi
-  "$ENGINE" rm --force "$RUN_NAME" >/dev/null 2>&1 || true
-  "$ENGINE" network rm "$NETWORK" >/dev/null 2>&1 || true
+  trap - EXIT
+  set +e
+  local cleanup_failed=0
+  if [[ "$CONTAINER_CREATED" == true ]]; then
+    "$ENGINE" rm --force "$RUN_NAME" >/dev/null 2>&1 || cleanup_failed=1
+  fi
+  if [[ "$NETWORK_CREATED" == true ]]; then
+    "$ENGINE" network rm "$NETWORK" >/dev/null 2>&1 || cleanup_failed=1
+  fi
   if [[ "$ENGINE" == podman ]]; then
     # Rootless Podman maps container UID 65532 to a subordinate host UID.
-    podman unshare rm -r -- "$DATA_DIR" >/dev/null 2>&1 || true
+    "$ENGINE" unshare rm -r -- "$DATA_DIR" >/dev/null 2>&1 || cleanup_failed=1
   else
     # Docker leaves the bind mount owned by the dropped runtime UID.
     "$ENGINE" run --rm --user 0 \
       --mount "type=bind,src=${DATA_DIR},dst=/data" \
-      --entrypoint chown "$IMAGE" "$(id -u):$(id -g)" /data >/dev/null 2>&1 || true
-    rm -r -- "$DATA_DIR" >/dev/null 2>&1 || true
+      --entrypoint chown "$IMAGE" "$(id -u):$(id -g)" /data >/dev/null 2>&1 || cleanup_failed=1
+    rm -r -- "$DATA_DIR" >/dev/null 2>&1 || cleanup_failed=1
   fi
+  if [[ -e "$DATA_DIR" ]]; then
+    echo "E2E cleanup failed; data remains at $DATA_DIR" >&2
+    cleanup_failed=1
+  fi
+  if (( cleanup_failed )); then
+    echo "E2E cleanup failed; inspect container=$RUN_NAME network=$NETWORK" >&2
+    result=1
+  fi
+  exit "$result"
 }
 trap cleanup EXIT
 
@@ -123,12 +146,14 @@ else
 fi
 
 "$ENGINE" network create --subnet 172.30.32.0/24 --gateway 172.30.32.1 "$NETWORK" >/dev/null
+NETWORK_CREATED=true
 "$ENGINE" run --detach --name "$RUN_NAME" \
   --network "$NETWORK" --ip 172.30.32.3 \
   --volume "$DATA_DIR:/data" \
   --env GATEWAY_TOKEN="$TOKEN" \
   --env HA_SWITCHBOARD_INGRESS_ONLY=true \
   "${SECURITY_OPT[@]}" "$IMAGE" >/dev/null
+CONTAINER_CREATED=true
 
 request_code() {
   local client_ip="$1" path="$2" supplied_token="${3:-}"

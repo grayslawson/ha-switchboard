@@ -33,5 +33,10 @@
       "invalid_discovery": "The discovered gateway information is incomplete or invalid.",
       "user_cancelled": "Setup was cancelled."
     }
-  }
+  },
+ "conversation": {
+   "agent": {
+      "done": "Done"
+   }
+ }
 }

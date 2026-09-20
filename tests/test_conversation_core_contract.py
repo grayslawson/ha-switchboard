@@ -9,7 +9,10 @@ from unittest.mock import patch
 
 import pytest
 
-pytest.importorskip("homeassistant")
+pytest.importorskip(
+    "homeassistant",
+    reason="Home Assistant 2026.9 runtime is required for Assist ConversationEntity contract tests",
+)
 
 from homeassistant.components.conversation import (  # noqa: E402
     ConversationEntity,
@@ -25,7 +28,10 @@ from custom_components.ha_switchboard.capabilities import (  # noqa: E402
     operation_spec,
 )
 from custom_components.ha_switchboard.client import GatewayClientError  # noqa: E402
-from custom_components.ha_switchboard.conversation import JevConversationEntity  # noqa: E402
+from custom_components.ha_switchboard.conversation import (  # noqa: E402
+    JevConversationEntity,
+    async_setup_entry,
+)
 from custom_components.ha_switchboard.execution import (  # noqa: E402
     CoreHomeAssistantExecutor,
     ExecutionBoundary,
@@ -48,6 +54,33 @@ class FakeClient:
         return {"profile_revision": "profile-one"}
 
 
+def test_conversation_platform_registers_one_selectable_entity_for_config_entry():
+    async def run():
+        from homeassistant.components import conversation as conversation_component
+
+        entities = []
+        runtime_data = SimpleNamespace(
+            client=FakeClient({"kind": "refuse", "response_key": "gateway_unavailable"}),
+            executor=object(),
+            coordinator=None,
+            diagnostics=None,
+        )
+        entry = SimpleNamespace(entry_id="entry-one", runtime_data=runtime_data)
+
+        await async_setup_entry(SimpleNamespace(data={}), entry, entities.extend)
+
+        assert len(entities) == 1
+        entity = entities[0]
+        assert isinstance(entity, ConversationEntity)
+        assert entity.unique_id == "entry-one_conversation"
+        assert entity._attr_name == "HA Switchboard"
+        assert entity._attr_has_entity_name is True
+        assert entity.supported_languages == "*"
+        assert entity._attr_supported_features == conversation_component.ConversationEntityFeature.CONTROL
+
+    asyncio.run(run())
+
+
 @pytest.mark.parametrize(
     ("gateway_response", "expected_speech", "expected_continue"),
     [
@@ -59,8 +92,8 @@ class FakeClient:
         ),
         (
             {"kind": "refuse", "response_key": "confirmation_required"},
-            "This action requires confirmation, which this conversation flow cannot collect yet.",
-            False,
+            "This action needs your confirmation. Say yes to continue or no to cancel.",
+            True,
         ),
         (GatewayClientError("unavailable"), "The HA Switchboard gateway is unavailable.", False),
     ],
@@ -113,6 +146,117 @@ def test_core_async_process_dispatches_to_gateway_and_returns_conversation_resul
         assert client.payload["language"] == user_input.language
         assert "device_id" not in client.payload
         assert "context" not in client.payload
+
+    asyncio.run(run())
+
+
+def test_native_routine_intent_is_handled_by_home_assistant_without_gateway():
+    async def run():
+        from unittest.mock import AsyncMock
+
+        from homeassistant.components import conversation as conversation_component
+        from homeassistant.helpers import intent
+
+        from custom_components.ha_switchboard.native_path import native_intent_filter
+
+        client = FakeClient({"kind": "refuse", "response_key": "gateway_unavailable"})
+        hass = SimpleNamespace(data={conversation_component.DATA_COMPONENT: object()})
+        entity = JevConversationEntity(client, entry_id="entry-one")
+        entity.hass = hass
+        chat_log = ChatLog(hass, "conversation-one")
+        user_input = ConversationInput(
+            text="turn on the kitchen lights",
+            context=Context(),
+            conversation_id="conversation-one",
+            device_id=None,
+            satellite_id=None,
+            language="en",
+            agent_id="conversation.ha_switchboard",
+        )
+        native_response = intent.IntentResponse(language="en")
+        native_response.async_set_speech("Done natively.")
+        native_handler = AsyncMock(return_value=native_response)
+
+        with (
+            patch(
+                "homeassistant.components.conversation.entity.async_get_chat_session",
+                return_value=nullcontext(),
+            ),
+            patch(
+                "homeassistant.components.conversation.entity.async_get_chat_log",
+                return_value=nullcontext(chat_log),
+            ),
+            patch(
+                "custom_components.ha_switchboard.conversation.conversation.async_handle_intents",
+                native_handler,
+            ),
+        ):
+            result = await entity.async_process(user_input)
+
+        native_handler.assert_awaited_once()
+        assert native_handler.await_args.args == (hass, user_input, chat_log)
+        assert native_handler.await_args.kwargs["intent_filter"] is native_intent_filter
+        assert client.payload is None
+        assert result.response is native_response
+        assert result.response.as_dict()["speech"]["plain"]["speech"] == "Done natively."
+        assert result.continue_conversation is False
+        assert any(
+            item["code"] == "native_fast_path" and item["outcome"] == "handled"
+            for item in entity.diagnostics.list(limit=10)
+        )
+
+    asyncio.run(run())
+
+
+def test_native_miss_continues_to_switchboard_without_false_native_success():
+    async def run():
+        from unittest.mock import AsyncMock
+
+        from homeassistant.components import conversation as conversation_component
+
+        client = FakeClient({"kind": "refuse", "response_key": "gateway_unavailable"})
+        hass = SimpleNamespace(data={conversation_component.DATA_COMPONENT: object()})
+        entity = JevConversationEntity(client, entry_id="entry-one")
+        entity.hass = hass
+        chat_log = ChatLog(hass, "conversation-one")
+        user_input = ConversationInput(
+            text="what is the status of the house",
+            context=Context(),
+            conversation_id="conversation-one",
+            device_id=None,
+            satellite_id=None,
+            language="en",
+            agent_id="conversation.ha_switchboard",
+        )
+        native_handler = AsyncMock(return_value=None)
+
+        with (
+            patch(
+                "homeassistant.components.conversation.entity.async_get_chat_session",
+                return_value=nullcontext(),
+            ),
+            patch(
+                "homeassistant.components.conversation.entity.async_get_chat_log",
+                return_value=nullcontext(chat_log),
+            ),
+            patch(
+                "custom_components.ha_switchboard.conversation.conversation.async_handle_intents",
+                native_handler,
+            ),
+        ):
+            result = await entity.async_process(user_input)
+
+        native_handler.assert_awaited_once()
+        assert callable(native_handler.await_args.kwargs["intent_filter"])
+        assert client.payload is not None
+        assert client.payload["utterance"] == user_input.text
+        assert result.response.as_dict()["speech"]["plain"]["speech"] == (
+            "The HA Switchboard gateway is unavailable."
+        )
+        assert any(
+            item["code"] == "native_fast_path" and item["outcome"] == "miss"
+            for item in entity.diagnostics.list(limit=10)
+        )
 
     asyncio.run(run())
 
@@ -189,3 +333,16 @@ def test_core_context_reaches_service_call_without_entering_gateway_payload():
         assert "user-one" not in repr(client.payload)
 
     asyncio.run(run())
+
+
+def test_response_language_has_reason_specific_next_steps_and_no_prohibited_generic_sentence():
+    from custom_components.ha_switchboard.conversation import _response_text
+
+    prohibited = "I could not safely complete that request."
+    for key in (
+        "profile_stale", "candidate_not_allowed", "invalid_parameters", "jev_invalid_response",
+        "confirmation_required", "post_action_unverified",
+    ):
+        text = _response_text({"response_key": key})
+        assert text and prohibited not in text
+        assert any(marker in text.casefold() for marker in ("please", "check", "not", "action", "device", "value"))

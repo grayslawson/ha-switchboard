@@ -10,6 +10,7 @@ from typing import Any, Mapping
 
 from .batch import BatchGroup, BatchRequestError, build_batch_group
 from .change_monitor import ChangeMonitor
+from .diagnostics import DiagnosticLog
 from .handoff import HandoffBroker, HandoffError, HandoffInvalidResponse
 from .jev_client import JevClient, JevError
 from .policy import PolicyConfig, evaluate_capability, validate_parameters
@@ -57,14 +58,67 @@ class Gateway:
         self.config = config
         self.compiler = ProfileCompiler()
         self.monitor = ChangeMonitor(compiler=self.compiler)
+        self.diagnostics = DiagnosticLog()
         self.active_profile: HomeProfile | None = None
         self._seen_requests: dict[str, DecisionResult] = {}
+        self._provider_state: dict[str, dict[str, Any]] = {
+            "jev": {
+                "status": "configured" if self._jev_configured() else "disabled",
+                "failures": 0,
+                "error_code": None,
+            }
+        }
+        self.configuration_warnings: tuple[str, ...] = ()
         self._restore_profile()
+
+    def _jev_configured(self) -> bool:
+        return self.jev.__class__.__name__ != "StaticJevClient"
+
+    def _provider_event(self, status: str, *, error_code: str | None = None) -> None:
+        state = self._provider_state["jev"]
+        previous = state["status"]
+        if status == "healthy":
+            state["failures"] = 0
+        elif status in {"unavailable", "degraded"}:
+            state["failures"] = int(state.get("failures", 0)) + 1
+        state["status"] = status
+        state["error_code"] = error_code
+        if status == previous and status not in {"healthy", "unavailable", "degraded"}:
+            return
+        event_code = (
+            "provider_recovered"
+            if status == "healthy" and previous in {"unavailable", "degraded"}
+            else "provider_failed"
+            if status in {"unavailable", "degraded"}
+            else "provider_state"
+        )
+        summary = (
+            "Provider recovered"
+            if status == "healthy"
+            else "Provider unavailable"
+            if status == "unavailable"
+            else "Provider state changed"
+        )
+        self.diagnostics.record(
+            event_code,
+            level="info" if status == "healthy" else "warning",
+            route_class="jev",
+            outcome=status,
+            error_code=error_code or "none",
+            summary=summary,
+        )
 
     def _restore_profile(self) -> None:
         """Restore only a stale profile; a restart must reconcile before writes."""
 
-        stored = self.store.load_profile()
+        try:
+            stored = self.store.load_profile()
+        except (OSError, TypeError, ValueError):
+            self.diagnostics.record(
+                "profile_restore_failed", level="warning", outcome="discarded",
+                summary="Persisted profile was not usable",
+            )
+            stored = None
         if stored is None:
             return
         try:
@@ -87,11 +141,23 @@ class Gateway:
     def ready(self) -> dict[str, Any]:
         profile_ready = self.active_profile is not None and self.active_profile.status is LifecycleStatus.ACTIVE
         monitor = self.monitor.status()
+        provider = self.provider_status()
+        configured = provider["configured_count"]
+        provider_degraded = provider["status"] != "ready"
+        reasons: list[str] = []
+        if not profile_ready or monitor["pending_sections"]:
+            reasons.append("profile_not_current")
+        if configured == 0:
+            reasons.append("provider_not_configured")
+        elif provider_degraded:
+            reasons.append("provider_degraded")
         return {
-            "status": "ready" if profile_ready and not monitor["pending_sections"] else "degraded",
+            "status": "ready" if not reasons else "degraded",
             "profile_ready": profile_ready,
             "monitor": monitor,
-            "jev_configured": self.jev.__class__.__name__ != "StaticJevClient",
+            "jev_configured": self._jev_configured(),
+            "provider_status": provider["status"],
+            "degraded_reasons": reasons,
         }
 
     def reconcile(self, snapshot: Mapping[str, Any]) -> dict[str, Any]:
@@ -102,6 +168,13 @@ class Gateway:
         profile = self.monitor.reconcile(clean)
         self.active_profile = profile
         self.store.save_profile(profile)
+        self.diagnostics.record(
+            "profile_reconciled",
+            correlation_id=profile.revision,
+            outcome="active",
+            capability_count=len(profile.capabilities),
+            summary="Profile reconciled",
+        )
         return self.profile_status()
 
     def invalidate(self, event: Mapping[str, Any]) -> dict[str, Any]:
@@ -114,6 +187,13 @@ class Gateway:
             )
             self.monitor.active_profile = self.active_profile
             self.store.save_profile(self.active_profile)
+        self.diagnostics.record(
+            "profile_invalidated",
+            level="warning" if sections else "info",
+            outcome="stale" if sections else "unchanged",
+            section_count=len(sections),
+            summary="Profile invalidation recorded",
+        )
         return self.profile_status()
 
     def profile_status(self) -> dict[str, Any]:
@@ -128,6 +208,145 @@ class Gateway:
             "sections": monitor_status.get("sections", {}),
             "capability_count": len(profile.capabilities) if profile else 0,
         }
+
+    def provider_status(self) -> dict[str, Any]:
+        """Return provider/circuit state without endpoint or credential data."""
+
+        jev_hosted = bool(getattr(self.jev, "hosted", False))
+        jev_configured = self._jev_configured()
+        routes: list[dict[str, Any]] = []
+        for route in self.routes.routes:
+            circuit_open = not self.routes.circuit_allows(route.route_id)
+            routes.append(
+                {
+                    "route_class": route.kind,
+                    "route_id": route.route_id,
+                    "status": "cooldown" if circuit_open else route.availability,
+                    "reachability": "not_checked",
+                    "response_kinds": [item.value for item in route.response_kinds],
+                }
+            )
+        route_ready = any(item["status"] in {"ready", "available", "degraded"} for item in routes)
+        jev_status = self._provider_state["jev"]["status"]
+        if jev_configured and jev_status in {"configured", "healthy"}:
+            overall = "ready"
+        elif route_ready:
+            overall = "degraded"
+        else:
+            overall = "unavailable" if jev_status in {"unavailable", "degraded"} else "disabled"
+        return {
+            "status": overall,
+            "configured_count": int(jev_configured) + len(routes),
+            "providers": {
+                "jev": {
+                    "status": jev_status,
+                    "hosted": jev_hosted,
+                    "reachability": "not_checked" if jev_configured else "not_configured",
+                    "failures": self._provider_state["jev"]["failures"],
+                    "error_code": self._provider_state["jev"]["error_code"],
+                },
+                "fallback": {
+                    "status": "configured" if routes else "disabled",
+                    "routes": routes,
+                },
+            }
+        }
+
+    def provider_compatibility(self, *, probe: bool = False) -> dict[str, Any]:
+        """Return secret-safe provider compatibility state.
+
+        A probe is opt-in because it consumes provider quota. When requested,
+        it sends only a synthetic utterance and an opaque fixture capability;
+        it never uses the active profile, user text, entity IDs, or state.
+        The HTTP caller is responsible for authentication.
+        """
+
+        result: dict[str, Any] = {
+            "status": "not_checked" if not probe else "checked",
+            "providers": {},
+        }
+        if not probe:
+            result["providers"]["jev"] = {
+                "status": "not_checked" if self._jev_configured() else "not_configured",
+                "error_code": None,
+            }
+            result["providers"]["fallback"] = {
+                "status": "not_checked" if self.routes.routes else "not_configured",
+                "routes": [route.route_id for route in self.routes.routes],
+            }
+            return result
+
+        if self._jev_configured():
+            probe_request = DecisionRequest(
+                request_id="compatibility-probe",
+                conversation_id="compatibility-probe",
+                utterance="compatibility probe; do not control a device",
+                language="en",
+                profile_revision="compatibility-probe",
+                policy_revision=self.config.policy.revision,
+                candidates=(),
+                bounded_context=(),
+                sanitized_state={},
+                privacy_mode=self.config.privacy_mode,
+            )
+            try:
+                decision = self.jev.decide(probe_request)
+                if not isinstance(decision, JevDecision):
+                    raise ValueError("invalid decision")
+                result["providers"]["jev"] = {"status": "compatible", "error_code": None}
+            except JevError as exc:
+                result["providers"]["jev"] = {"status": "unavailable", "error_code": getattr(exc, "code", "jev_unavailable")}
+            except (AttributeError, KeyError, TypeError, ValueError):
+                result["providers"]["jev"] = {"status": "incompatible", "error_code": "jev_invalid_response"}
+        else:
+            result["providers"]["jev"] = {"status": "not_configured", "error_code": None}
+
+        fallback_status: dict[str, Any] = {"status": "not_configured", "routes": []}
+        for route in self.routes.routes[:8]:
+            fallback_status["routes"].append(route.route_id)
+            if self.handoff is None:
+                continue
+            handoff_request = HandoffRequest(
+                handoff_id=f"compatibility-{route.route_id}",
+                request_id="compatibility-probe",
+                conversation_id="compatibility-probe",
+                utterance="compatibility probe; do not control a device",
+                bounded_context=(),
+                relevant_facts=({
+                    "capability_id": "compatibility-probe-capability",
+                    "display_name": "Compatibility probe (no device)",
+                    "domain": "light",
+                    "operation": "turn_on",
+                    "parameter_schema": {"properties": {}, "required": []},
+                },),
+                route_id=route.route_id,
+                complexity=Complexity.SIMPLE,
+                reason="compatibility_probe",
+                allowed_response_kinds=(ResponseKind.PROSE_RESPONSE,),
+                handoff_depth=1,
+                route_policy_revision=self.routes.revision,
+                privacy_mode=self.config.privacy_mode,
+            )
+            try:
+                response = self.handoff.dispatch(handoff_request)
+                fallback_status["status"] = "compatible"
+                fallback_status["last_route"] = route.route_id
+                fallback_status["response_kind"] = response.kind.value
+                break
+            except HandoffInvalidResponse:
+                fallback_status["status"] = "incompatible"
+                fallback_status["error_code"] = "handoff_invalid_response"
+            except HandoffError:
+                fallback_status["status"] = "unavailable"
+                fallback_status["error_code"] = "handoff_unavailable"
+        result["providers"]["fallback"] = fallback_status
+        result["status"] = "compatible" if any(
+            item.get("status") == "compatible" for item in result["providers"].values() if isinstance(item, Mapping)
+        ) else "incompatible"
+        return result
+
+    def diagnostics_page(self, **filters: Any) -> dict[str, Any]:
+        return self.diagnostics.query(**filters)
 
     def process(self, payload: Mapping[str, Any]) -> DecisionResult:
         request_id = str(payload.get("request_id") or uuid.uuid4().hex)
@@ -169,11 +388,14 @@ class Gateway:
             request = replace(request, candidates=(batch.candidate(),))
         try:
             decision = self.jev.decide(request)
+            self._provider_event("healthy")
         except JevError as exc:
+            self._provider_event("unavailable", error_code=getattr(exc, "code", "jev_unavailable"))
             if self.routes.routes:
                 return self._remember(self._delegate(request, JevDecision(RouteKind.DELEGATE, Complexity.SIMPLE, reason=exc.code), batch=batch))
             return self._remember(self._result(request, ResultKind.REFUSE, exc.code))
         except Exception:
+            self._provider_event("degraded", error_code="jev_invalid_response")
             if self.routes.routes:
                 return self._remember(self._delegate(request, JevDecision(RouteKind.DELEGATE, Complexity.SIMPLE, reason="jev_invalid_response"), batch=batch))
             return self._remember(self._result(request, ResultKind.REFUSE, "jev_invalid_response"))
@@ -350,6 +572,15 @@ class Gateway:
         candidate = next((item for item in request.candidates if item.get("capability_id") == capability_id), None)
         if not isinstance(candidate, Mapping) or not self._fallback_single_matches(request.utterance, candidate):
             return self._result(request, ResultKind.REFUSE, "fallback_target_unverified", decision=decision, route_id=route.route_id, handoff_id=handoff_id)
+        capability = next((item for item in self.active_profile.capabilities if item.capability_id == capability_id), None)
+        if capability is None:
+            return self._result(request, ResultKind.REFUSE, "candidate_not_allowed", decision=decision, route_id=route.route_id, handoff_id=handoff_id, capability_id=capability_id)
+        try:
+            # Delegated proposals re-enter the same parameter gate as Jev
+            # proposals. Parameter references are descriptive only.
+            parameters = validate_parameters(capability, proposal.get("parameters", {}))
+        except (TypeError, ValueError):
+            return self._result(request, ResultKind.REFUSE, "invalid_parameters", decision=decision, route_id=route.route_id, handoff_id=handoff_id, capability_id=capability_id)
         policy = evaluate_capability(
             self.active_profile,
             capability_id,
@@ -359,10 +590,10 @@ class Gateway:
             config=self.config.policy,
         )
         if policy.needs_confirmation:
-            return self._result(request, ResultKind.CONFIRM, policy.response_key, decision=decision, route_id=route.route_id, handoff_id=handoff_id, capability_id=capability_id)
+            return self._result(request, ResultKind.CONFIRM, policy.response_key, decision=decision, route_id=route.route_id, handoff_id=handoff_id, capability_id=capability_id, parameters=parameters)
         if not policy.allowed:
             return self._result(request, ResultKind.REFUSE, policy.response_key, decision=decision, route_id=route.route_id, handoff_id=handoff_id, capability_id=capability_id)
-        return self._result(request, ResultKind.EXECUTE, "execute", decision=decision, route_id=route.route_id, handoff_id=handoff_id, capability_id=capability_id)
+        return self._result(request, ResultKind.EXECUTE, "execute", decision=decision, route_id=route.route_id, handoff_id=handoff_id, capability_id=capability_id, parameters=parameters)
 
     @staticmethod
     def _fallback_single_matches(utterance: str, candidate: Mapping[str, Any]) -> bool:
@@ -370,10 +601,18 @@ class Gateway:
 
         text = " ".join(utterance.casefold().split())
         operation = str(candidate.get("operation", ""))
-        if operation not in {"turn_on", "turn_off"}:
+        operation_terms = {
+            "turn_on": (r"\b(?:turn|switch)\s+on\b",),
+            "turn_off": (r"\b(?:turn|switch)\s+off\b",),
+            "toggle": (r"\btoggle\b",),
+            "set_brightness": (r"\b(?:set|change)\b", r"\bbrightness\b", r"\b(?:percent|%)\b"),
+            "set_temperature": (r"\b(?:set|change)\b", r"\b(?:temperature|degrees?)\b"),
+            "set_volume": (r"\b(?:set|change)\b", r"\bvolume\b"),
+        }
+        terms = operation_terms.get(operation)
+        if terms is None:
             return False
-        verb = "on" if operation == "turn_on" else "off"
-        if not re.search(r"\b(?:turn|switch)\b", text) or not re.search(rf"\b{verb}\b", text):
+        if any(re.search(term, text) is None for term in terms):
             return False
         name = str(candidate.get("display_name", "")).split(":", 1)[0].casefold().strip()
         return len(name) >= 3 and re.search(rf"(?<!\w){re.escape(name)}(?!\w)", text) is not None
@@ -424,4 +663,12 @@ class Gateway:
         if len(self._seen_requests) > 1_024:
             oldest = next(iter(self._seen_requests))
             del self._seen_requests[oldest]
+        self.diagnostics.record(
+            "conversation_result",
+            level="warning" if result.kind.value in {"clarify", "confirm", "refuse"} else "info",
+            correlation_id=result.request_id,
+            outcome=result.response_key,
+            route_class=result.route_id or "jev",
+            summary="Conversation request completed",
+        )
         return result

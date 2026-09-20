@@ -26,6 +26,12 @@ try:  # pragma: no cover - imports are exercised in the HA devcontainer
         EVENT_AREA_REGISTRY_UPDATED,
         EVENT_FLOOR_REGISTRY_UPDATED,
         EVENT_LABEL_REGISTRY_UPDATED,
+        "exposure_updated",
+        "service_schema_updated",
+        "assist_surface_updated",
+        "routine_updated",
+        "reconnect",
+        "restart",
     )
 except ImportError:  # pragma: no cover - repository tests do not install HA
     PROFILE_EVENT_TYPES = (
@@ -35,6 +41,12 @@ except ImportError:  # pragma: no cover - repository tests do not install HA
         "area_registry_updated",
         "floor_registry_updated",
         "label_registry_updated",
+        "exposure_updated",
+        "service_schema_updated",
+        "assist_surface_updated",
+        "routine_updated",
+        "reconnect",
+        "restart",
     )
 
 STATE_CHANGED_EVENT = "state_changed"

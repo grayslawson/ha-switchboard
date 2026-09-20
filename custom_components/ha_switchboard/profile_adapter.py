@@ -20,6 +20,9 @@ from .opaque import adapter_ref, capability_id, opaque_id, routine_capability_id
 _RAW_REFERENCE_KEYS = frozenset({"entity_id", "device_id", "area_id", "unique_id", "config_entry_id"})
 _MAX_ENTITIES = 2_000
 _MAX_ALIASES = 32
+_MAX_WARNINGS = 128
+_MAX_SERVICE_FIELDS = 64
+_MAX_DEVICE_DOMAINS = 32
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,12 +56,15 @@ def _registry_entry(registry: Any, entity_id: str) -> Any:
             return getter(entity_id)
         except (KeyError, TypeError, ValueError):
             return None
-    entities = getattr(registry, "entities", None)
+    entities = registry.get("entities") if isinstance(registry, Mapping) else getattr(registry, "entities", None)
     return entities.get(entity_id) if isinstance(entities, Mapping) else None
 
 
 def _registry_names(registry: Any, attr: str) -> dict[str, str]:
-    values = getattr(registry, attr, {}) if registry is not None else {}
+    if isinstance(registry, Mapping):
+        values = registry.get(attr, {})
+    else:
+        values = getattr(registry, attr, {}) if registry is not None else {}
     if not isinstance(values, Mapping):
         return {}
     result: dict[str, str] = {}
@@ -100,6 +106,37 @@ def _service_available(services: Mapping[str, Any], domain: str, service: str) -
     return isinstance(domain_services, Mapping) and service in domain_services
 
 
+def _service_fields(item: Any) -> tuple[list[str], bool]:
+    """Return bounded field names across live and fixture service shapes."""
+
+    fields = _mapping_value(item, "fields", None)
+    if fields is None:
+        return [], True
+    if not isinstance(fields, Mapping):
+        return [], False
+    names = [_text(key)[:64] for key in fields if _text(key)]
+    return list(dict.fromkeys(names))[:_MAX_SERVICE_FIELDS], True
+
+
+def _service_shape_warnings(services: Mapping[str, Any]) -> list[str]:
+    warnings: list[str] = []
+    for domain, domain_services in services.items():
+        if not isinstance(domain_services, Mapping):
+            warnings.append(f"service_domain_shape:{str(domain)[:64]}")
+            continue
+        for service, descriptor in domain_services.items():
+            _fields, valid = _service_fields(descriptor)
+            if not valid:
+                warnings.append(f"service_shape_unrecognized:{str(domain)[:32]}:{str(service)[:32]}")
+    return warnings[:_MAX_WARNINGS]
+
+
+def _mapping_value(item: Any, key: str, default: Any = None) -> Any:
+    if isinstance(item, Mapping):
+        return item.get(key, default)
+    return getattr(item, key, default)
+
+
 def _parameter_schema(domain: str, operation: str, state: Any) -> dict[str, Any]:
     spec = operation_spec(domain, operation)
     schema = copy.deepcopy(dict(spec.parameter_schema if spec else {"properties": {}}))
@@ -122,6 +159,32 @@ def _parameter_schema(domain: str, operation: str, state: Any) -> dict[str, Any]
             if modes:
                 props["hvac_mode"]["enum"] = modes
     return schema
+
+
+def _attribute_shape_warnings(domain: str, state: Any) -> list[str]:
+    """Report malformed integration attributes without rejecting the profile."""
+
+    attrs = _attributes(state)
+    warnings: list[str] = []
+    if domain == "climate":
+        modes = attrs.get("hvac_modes")
+        if modes is not None and not isinstance(modes, (list, tuple)):
+            warnings.append("attribute_shape:climate:hvac_modes")
+        for key in ("min_temp", "max_temp"):
+            value = attrs.get(key)
+            if value is not None:
+                try:
+                    float(value)
+                except (TypeError, ValueError):
+                    warnings.append(f"attribute_shape:climate:{key}")
+    if domain == "media_player" and attrs.get("volume_level") is not None:
+        try:
+            value = float(attrs["volume_level"])
+            if not 0 <= value <= 1:
+                warnings.append("attribute_range:media_player:volume_level")
+        except (TypeError, ValueError):
+            warnings.append("attribute_shape:media_player:volume_level")
+    return warnings
 
 
 def _assert_sanitized(value: Any, *, key: str | None = None) -> None:
@@ -175,24 +238,45 @@ class HomeAssistantProfileAdapter:
         exposure: list[str] = []
         targets: dict[str, CapabilityTarget] = {}
         routines: list[dict[str, Any]] = []
-        supported_domains = {domain for domain, _ in OPERATION_KEYS()} | {"sensor", "binary_sensor"}
+        groups: list[dict[str, Any]] = []
+        warnings: list[str] = _service_shape_warnings(services)
+        # Scripts and scenes are routine surfaces even though activation is
+        # represented separately from the typed entity operation matrix.
+        supported_domains = {domain for domain, _ in OPERATION_KEYS()} | {
+            "sensor", "binary_sensor", "script", "scene"
+        }
         read_targets: dict[str, str] = {}
 
         for state in states:
             entity_id = _text(_state_value(state, "entity_id"))
             if "." not in entity_id:
+                warnings.append("unsupported_entity_shape")
                 continue
             domain = entity_id.split(".", 1)[0]
+            if domain == "group":
+                attrs = _attributes(state)
+                members = attrs.get("entity_id", ())
+                if isinstance(members, str):
+                    members = [members]
+                if not isinstance(members, (list, tuple, set)):
+                    warnings.append("unsupported_group_shape")
+                    continue
+                groups.append({
+                    "adapter_ref": adapter_ref(entity_id),
+                    "name": _text(attrs.get("friendly_name"), entity_id.split(".", 1)[-1].replace("_", " ")),
+                    "members": [adapter_ref(str(member)) for member in members if "." in str(member)][:512],
+                })
+                continue
             if domain not in supported_domains:
                 continue
             entry = _registry_entry(entity_reg, entity_id)
-            disabled = bool(getattr(entry, "disabled_by", None) or getattr(entry, "hidden_by", None))
+            disabled = bool(_mapping_value(entry, "disabled_by") or _mapping_value(entry, "hidden_by"))
             reference = adapter_ref(entity_id)
             attrs = _attributes(state)
-            area_id = _text(getattr(entry, "area_id", None))
+            area_id = _text(_mapping_value(entry, "area_id"))
             area = area_names.get(area_id) or _text(attrs.get("area_name")) or None
-            aliases = _safe_aliases(getattr(entry, "aliases", None) or attrs.get("aliases", ()))
-            name = _text(getattr(entry, "name", None)) or _text(getattr(entry, "original_name", None))
+            aliases = _safe_aliases(_mapping_value(entry, "aliases") or attrs.get("aliases", ()))
+            name = _text(_mapping_value(entry, "name")) or _text(_mapping_value(entry, "original_name"))
             name = name or _text(attrs.get("friendly_name"), entity_id.split(".", 1)[-1].replace("_", " "))
             exposed = False if disabled else self._is_exposed(entity_id, state)
             available = _available(state)
@@ -211,6 +295,7 @@ class HomeAssistantProfileAdapter:
 
             operations: list[str] = []
             parameter_schemas: dict[str, dict[str, Any]] = {}
+            warnings.extend(_attribute_shape_warnings(domain, state))
             for operation in operations_for_domain(domain):
                 spec = operation_spec(domain, operation)
                 if spec and not disabled and _service_available(services, spec.service_domain, spec.service):
@@ -231,19 +316,31 @@ class HomeAssistantProfileAdapter:
                                 spec.risk_class,
                             ),
                         )
+                elif spec and not disabled:
+                    warnings.append(f"service_unavailable:{domain}:{operation}")
+            service_shapes: dict[str, list[str]] = {}
+            for operation in operations:
+                spec = operation_spec(domain, operation)
+                if spec:
+                    descriptor = services.get(spec.service_domain, {})
+                    descriptor = descriptor.get(spec.service, {}) if isinstance(descriptor, Mapping) else {}
+                    fields, _valid = _service_fields(descriptor)
+                    if fields:
+                        service_shapes[operation] = fields
             entity_rows.append(
                 {
                     "adapter_ref": reference,
                     "domain": domain,
                     "name": name,
                     "area": area,
-                    "floor": floor_names.get(_text(getattr(entry, "floor_id", None))) or None,
-                    "labels": [label_names.get(str(label), str(label)) for label in (getattr(entry, "labels", ()) or ())][:32],
+                    "floor": floor_names.get(_text(_mapping_value(entry, "floor_id"))) or None,
+                    "labels": [label_names.get(str(label), str(label)) for label in (_mapping_value(entry, "labels", ()) or ())][:32],
                     "aliases": aliases,
                     "exposed": exposed,
                     "available": available,
                     "operations": operations,
                     "parameter_schemas": parameter_schemas,
+                    "service_fields": service_shapes,
                     "risk_class": self._risk(domain),
                 }
             )
@@ -251,20 +348,50 @@ class HomeAssistantProfileAdapter:
         snapshot = {
             "installation_key": self.installation_key,
             "entities": entity_rows,
-            "devices": self._sanitized_devices(device_reg),
+            "devices": self._sanitized_devices(device_reg, entity_reg, area_names, floor_names),
             "organization": {
                 "areas": sorted(set(area_names.values()))[:256],
                 "floors": sorted(set(floor_names.values()))[:128],
                 "labels": sorted(set(label_names.values()))[:128],
+                "groups": groups[:256],
             },
             "exposure": list(dict.fromkeys(exposure)),
             "services": self._sanitized_services(services),
             "routines": routines,
-            "assist_surfaces": [],
+            "assist_surfaces": self._assist_surfaces(),
             "compatibility": [],
+            "warnings": list(dict.fromkeys(warnings))[:_MAX_WARNINGS],
         }
         _assert_sanitized(snapshot)
         return ProfileBuild(snapshot, targets, read_targets)
+
+    def _assist_surfaces(self) -> list[dict[str, Any]]:
+        """Expose only descriptive Assist surfaces, never pipeline internals."""
+
+        surfaces: list[dict[str, Any]] = []
+        data = getattr(self.hass, "data", {})
+        candidates: Any = data.get("assist_surfaces") if isinstance(data, Mapping) else None
+        if candidates is None:
+            config = getattr(self.hass, "config", None)
+            candidates = getattr(config, "assist_surfaces", None)
+        if isinstance(candidates, Mapping):
+            candidates = list(candidates.values())
+        if not isinstance(candidates, (list, tuple, set)):
+            return surfaces
+        for item in candidates:
+            kind = _text(_mapping_value(item, "kind"), "assist_surface")
+            name = _text(_mapping_value(item, "name"), kind)
+            capabilities = _mapping_value(item, "capabilities", ())
+            if isinstance(capabilities, str):
+                capabilities = [capabilities]
+            if not isinstance(capabilities, (list, tuple, set)):
+                capabilities = []
+            surfaces.append({
+                "kind": kind[:64],
+                "name": name[:128],
+                "capabilities": [_text(value)[:64] for value in capabilities if _text(value)][:32],
+            })
+        return surfaces[:128]
 
     def _is_exposed(self, entity_id: str, state: Any) -> bool:
         try:
@@ -279,18 +406,52 @@ class HomeAssistantProfileAdapter:
         return "confirm" if domain in {"lock", "cover", "garage"} else "routine"
 
     @staticmethod
-    def _sanitized_devices(registry: Any) -> list[dict[str, Any]]:
+    def _sanitized_devices(
+        registry: Any,
+        entity_registry: Any = None,
+        area_names: Mapping[str, str] | None = None,
+        floor_names: Mapping[str, str] | None = None,
+    ) -> list[dict[str, Any]]:
         # Device IDs are intentionally not exported.  Names and manufacturer
         # metadata are useful context but remain bounded and non-addressable.
-        values = getattr(registry, "devices", {}) if registry is not None else {}
+        values = registry.get("devices", {}) if isinstance(registry, Mapping) else (getattr(registry, "devices", {}) if registry is not None else {})
         result: list[dict[str, Any]] = []
         if isinstance(values, Mapping):
-            for item in values.values():
-                name = _text(getattr(item, "name", None))
-                manufacturer = _text(getattr(item, "manufacturer", None))
-                model = _text(getattr(item, "model", None))
+            entity_counts: dict[str, int] = {}
+            domains: dict[str, set[str]] = {}
+            entity_values = (
+                entity_registry.get("entities", {})
+                if isinstance(entity_registry, Mapping)
+                else (getattr(entity_registry, "entities", {}) if entity_registry is not None else {})
+            )
+            if isinstance(entity_values, Mapping):
+                for entity in entity_values.values():
+                    device_id = _text(_mapping_value(entity, "device_id"))
+                    entity_id = _text(_mapping_value(entity, "entity_id"))
+                    if not device_id:
+                        continue
+                    entity_counts[device_id] = entity_counts.get(device_id, 0) + 1
+                    if "." in entity_id:
+                        domains.setdefault(device_id, set()).add(entity_id.split(".", 1)[0])
+            for device_id, item in values.items():
+                name = _text(_mapping_value(item, "name"))
+                manufacturer = _text(_mapping_value(item, "manufacturer"))
+                model = _text(_mapping_value(item, "model"))
                 if name or manufacturer or model:
-                    result.append({"name": name, "manufacturer": manufacturer, "model": model})
+                    area_id = _text(_mapping_value(item, "area_id"))
+                    floor_id = _text(_mapping_value(item, "floor_id"))
+                    row: dict[str, Any] = {
+                        "name": name[:128],
+                        "manufacturer": manufacturer[:128],
+                        "model": model[:128],
+                        "entity_count": entity_counts.get(str(device_id), 0),
+                        "domains": sorted(domains.get(str(device_id), set()))[:_MAX_DEVICE_DOMAINS],
+                    }
+                    if area_names and area_id in area_names:
+                        row["area"] = area_names[area_id]
+                    if floor_names and floor_id in floor_names:
+                        row["floor"] = floor_names[floor_id]
+                    result.append(row)
         return result[:512]
 
     @staticmethod
@@ -299,14 +460,25 @@ class HomeAssistantProfileAdapter:
         for domain in sorted(services):
             if not isinstance(services[domain], Mapping):
                 continue
-            operations = sorted(
-                service_name
-                for candidate_domain, operation in OPERATION_KEYS()
-                for service_name in [operation_spec(candidate_domain, operation).service]
-                if candidate_domain == domain and service_name in services[domain]
-            )
+            operations: list[str] = []
+            fields: dict[str, list[str]] = {}
+            for candidate_domain, operation in OPERATION_KEYS():
+                if candidate_domain != domain:
+                    continue
+                spec = operation_spec(candidate_domain, operation)
+                if not spec or spec.service not in services[domain]:
+                    continue
+                service_name = spec.service
+                if service_name not in operations:
+                    operations.append(service_name)
+                service_fields, _valid = _service_fields(services[domain][service_name])
+                if service_fields:
+                    fields[service_name] = service_fields
             if operations:
-                result.append({"domain": str(domain), "operations": operations[:64]})
+                row: dict[str, Any] = {"domain": str(domain), "operations": sorted(operations)[:64]}
+                if fields:
+                    row["fields"] = fields
+                result.append(row)
         return result[:128]
 
 

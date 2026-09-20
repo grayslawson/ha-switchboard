@@ -1,6 +1,6 @@
 # HA Switchboard
 
-HA Switchboard is a small, local-first control layer for [Home Assistant](https://www.home-assistant.io/). It puts a fast, bounded Jev decision path in front of Home Assistant while preserving the interfaces people already use: Assist, conversation agents, voice satellites, dashboards, and companion applications.
+HA Switchboard is a small, local-first control layer for [Home Assistant](https://www.home-assistant.io/). It adds a bounded Jev decision path behind Home Assistant's existing conversation surfaces while preserving the interfaces people already use: Assist, conversation agents, voice satellites, dashboards, and companion applications.
 
 The goal is simple: make everyday home control quick and inexpensive, then hand genuinely open-ended requests to a user-approved traditional LLM when policy says that is appropriate.
 
@@ -8,8 +8,30 @@ The goal is simple: make everyday home control quick and inexpensive, then hand 
 >
 > The gateway, Supervisor discovery path, Core integration lifecycle, profile model, policy checks, and packaging paths are available in this checkout and locally tested. Read [Current limitations and roadmap](#current-limitations-and-roadmap) before deploying this to a real home.
 
-This checkout declares version `0.2.0`. A source version alone is not proof
-of publication; check the matching public tag and image before installing.
+This checkout declares the coordinated source version `0.2.0`. It is a source
+release candidate, not a published or complete release: the App is still
+marked experimental and the external/runtime gates remain open. A source
+version alone is not proof of publication; check the matching public tag,
+multi-architecture image, and GitHub Release before installing.
+
+Version policy is intentionally strict: the App config/image, Python package,
+Core manifest, and changelog must carry the same semantic version. A `v0.2.0`
+tag, public mirror, GHCR digest, and GitHub Release must all identify the same
+protected source revision before anyone describes the artifact as public.
+See [docs/RELEASE.md](docs/RELEASE.md) for migration, rollback, provenance,
+canary, and external-dependency evidence requirements.
+
+The local source authorities currently agree on `0.2.0`:
+
+| Artifact | Source authority |
+| --- | --- |
+| Supervisor App and image | `app/config.yaml`, `app/Dockerfile` |
+| Gateway package | `app/ha_switchboard/__init__.py`, `pyproject.toml` |
+| Home Assistant Core integration | `custom_components/ha_switchboard/manifest.json` |
+| Human-readable release history | `app/CHANGELOG.md` |
+
+This table describes checked-in source metadata only. It is not an installed
+App version, image digest, public tag, HACS result, or live App/Core result.
 
 ### Verification status
 
@@ -17,6 +39,17 @@ Local E2E, image, and host-test results describe this checkout and its
 disposable harness only. They do not prove a public release, a configured HACS
 installation, or deployment of the current source to an existing Supervisor
 installation.
+
+For a disposable local Home Assistant with representative lights, switches,
+fans, media, climate, cover, garage, lock, sensor, motion, area, label, and
+Assist-pipeline fixtures, start with the [release checklist](docs/RELEASE.md#evidence-states).
+The detailed fixture harness is maintained in the private checkout at
+`tools/local-fixtures/README.md`; it is intentionally excluded from the public
+mirror. The fixture installer is fail-closed to the named `busy_cohen`
+container and localhost port `7123`; it never resets a Core volume, changes
+App credentials, or contacts an external provider. Run its `verify` command
+after an integration install or upgrade to capture secret-free config-entry
+evidence.
 
 The source manifest sets `hassio_api: true` because scoped Supervisor
 self-information and discovery are required. This is not broad Home Assistant
@@ -27,7 +60,8 @@ reinstall the App before calling its live permission set current.
 
 Home Assistant is the source of truth and remains the authority that executes actions. Switchboard adds an intelligence and routing layer around it:
 
-- **Fast path:** Jev receives a bounded request and capability context, then returns a typed decision such as read, control, clarify, delegate, or refuse.
+- **Native fast path:** Home Assistant handles clear built-in intents through its own Conversation/Assist matching, and the Core integration can answer eligible local read-only questions without a provider call.
+- **Bounded routing path:** when a request is intentionally sent to Switchboard, Jev receives a bounded request and capability context, then returns a typed decision such as read, control, clarify, delegate, or refuse.
 - **Cheap path:** routine commands do not need a large general-purpose model or a long tool-planning loop.
 - **Safe path:** opaque capability IDs, allowlists, confidence and ambiguity thresholds, confirmation policy, idempotency, and post-action verification sit between a decision and a Home Assistant write.
 - **Fallback path:** a more capable model can receive one bounded handoff for requests outside Jev's scope, subject to privacy, cost, latency, complexity, and response-type policy.
@@ -56,11 +90,42 @@ Voice, text, Assist, dashboard, or conversation agent
 
 The gateway does not execute Home Assistant services. The companion integration owns that boundary. The gateway stores a redacted, versioned capability profile, and profile changes make the profile stale until a complete replacement snapshot is reconciled.
 
-### Jev-first routing
+### Bounded Jev routing
 
-In this project, Jev is used as a typed decision boundary rather than as a prose chatbot. The App can call either a Switchboard-compatible typed service or OpenRouter's native Decisions endpoint. The native OpenRouter adapter translates route and capability choices for parameter-free controls; it does not extract target temperatures, brightness levels, or other action values. A compatible custom service may return typed `parameters`, which the Core integration validates before execution.
+In this project, Jev is used as a typed decision boundary rather than as a prose chatbot. The App can use the direct TypeSafe System One contract, OpenRouter's native Decisions contract, or a generic Switchboard-compatible typed Jev endpoint. The native OpenRouter adapter translates route and capability choices for parameter-free controls; it does not extract target temperatures, brightness levels, or other action values. A compatible typed service may return typed `parameters`, which the Core integration validates before execution.
 
 If Jev selects `delegate`, Switchboard chooses an eligible downstream route by policy. A traditional model may return bounded prose or one typed capability proposal. Any proposal re-enters the same freshness, confirmation, allowlist, execution, and verification checks. Handoffs are limited to one level to prevent loops.
+
+### 0.2.0 support boundary
+
+This is the implementation boundary in this checkout, not the target state in
+`specs/001-ha-switchboard-completeness/`:
+
+| Area | Supported now | Not supported or not proven yet |
+| --- | --- | --- |
+| Conversation | Local read-only answers; bounded single-target proposals; verified results and reason-specific refusals | A general Home Assistant agent; every natural-language request |
+| Controls | Exposed light, switch, fan, media-player, climate, lock, cover, and garage rows when the corresponding service exists; exposed script/scene routines may be represented in the profile for visibility | Script/scene `activate` rows are currently held out of Core execution; unsupported domains and service shapes are omitted, not emulated |
+| Parameters | Core validates brightness (0–100%), volume (0–1), temperature (5–35°C before per-entity bounds), and HVAC enums supplied by an adapter | Native OpenRouter Decisions does not extract action values; a compatible typed Jev service must supply them |
+| Multi-device | Explicit on/off groups for exposed lights, switches, and fans; at most 32 targets; preflight, sequential execution, and partial-result reporting | Atomic batches, toggle batches, parameterized batches, and general area/label/group semantics |
+| Follow-up turns | Pending clarification/confirmation is Core-local, short-lived, bound to the conversation and user, and consumed once; expiry or mismatch cannot authorize a write | Full fixture Assist/E2E proof of every follow-up path is not yet recorded |
+| Profile lifecycle | Core startup scan, periodic refresh, registry invalidation, restart/manual-scan recovery, bounded state cache, and atomic replacement | Complete discovery of every Home Assistant registry, Assist surface, integration, automation, script, and scene shape |
+| Providers | Compatible typed Jev HTTP; native OpenRouter Decisions for parameter-free choices; optional OpenRouter chat or typed HTTP fallback | Provider credentials, arbitrary HA-agent execution, or unbounded tool delegation |
+
+The provider contracts are intentionally separate:
+
+| Route | Configuration boundary | Wire behavior and limit |
+| --- | --- | --- |
+| Direct TypeSafe System One | App option `jev_provider: typesafe` plus `jev_endpoint`, `jev_api_key`, and `jev_model`; standalone/runtime clients may use `JEV_PROVIDER`, `JEV_BASE_URL` or `JEV_ENDPOINT`, `JEV_API_KEY`, and `JEV_MODEL` | Normalizes the base URL to `/v1/systemone` and exchanges typed `answers`; typed parameter questions are available when the capability schema can express them. |
+| OpenRouter Decisions | App options: exact `jev_endpoint` `https://openrouter.ai/api/alpha/decisions`, `jev_model`, and `jev_api_key`; use `jev_hosted_allowed` | Translates OpenRouter `answers` into one bounded route/capability proposal. The native adapter is parameter-free and clarifies parameterized actions. |
+| Generic typed Jev | A custom `jev_endpoint` plus `jev_api_key` | Must return Switchboard's typed `decision` contract. It is not an OpenAI chat-completions endpoint. |
+| OpenAI-compatible fallback | `fallback_provider: openrouter` or `openai_compatible`, `fallback_endpoint`, `fallback_api_key`, and `fallback_model` | Uses a chat-completions base URL or full path, normalizes `/chat/completions`, rejects tool calls, and returns bounded prose or one offered capability proposal. |
+
+The checked-in Supervisor manifest exposes the Jev provider selector, endpoint,
+model/key, and fallback fields. `JEV_BASE_URL` remains a runtime environment
+input for an explicitly managed client path; the App uses `jev_endpoint` for
+the configured TypeSafe base URL or other Jev endpoint. A fallback is never a
+Home Assistant agent: it
+cannot call services, invent capability IDs, or bypass Core validation.
 
 ## Supported interfaces
 
@@ -76,13 +141,46 @@ If Jev selects `delegate`, Switchboard chooses an eligible downstream route by p
 
 Switchboard is not a dashboard, wake-word engine, STT engine, TTS engine, Wyoming server, or replacement for Home Assistant Assist.
 
+## Native Home Assistant fast path
+
+Home Assistant remains the front door and the authority for built-in intent
+matching. Switchboard does not replace native Home Assistant Conversation or
+Assist handling, and Jev is not required for every simple command. A clear
+native intent can complete through Home Assistant's own fast path; a local
+read-only answer inside the Switchboard Conversation entity also bypasses a
+provider call.
+
+Switchboard is an additional bounded routing layer for requests that need more
+judgment. Jev is most useful for ambiguous, compound, or higher-risk requests:
+it chooses among the opaque capabilities already offered by Core, while Core
+still validates, confirms, executes, and verifies. An eligible fallback is for
+open-ended requests Jev cannot answer; it returns bounded prose or one
+proposal, never an alternate Home Assistant agent or service executor.
+
+Native channels remain in place around this boundary:
+
+- Assist pipelines used by the Home Assistant mobile app and dashboard;
+- voice satellites and Wyoming/ESPHome pipelines;
+- Home Assistant's native Conversation entity; and
+- the `conversation.process` service/API used by dashboards, companion apps,
+  and other integrations.
+
+Choose **HA Switchboard** as the Conversation agent only for the Assist
+pipeline or Conversation calls that should use this routing layer. Other native
+intent handlers and conversation agents remain independent.
+
 ## Install on Home Assistant OS
 
 The App and Core integration are intentionally separate artifacts.
 
-1. Add the App repository in **Settings → Apps → App store → ⋮ → Repositories**, then install and start **HA Switchboard**.
+1. After the App release is published, add
+   `https://github.com/grayslawson/ha-switchboard` in **Settings → Apps → App
+   store → ⋮ → Repositories**, then install and start **HA Switchboard**. The
+   local `0.2.0` source candidate is not proof that this App repository or its
+   image is currently installable. For local development, use the disposable
+   harness described below instead.
 2. Configure the App as described in [app/DOCS.md](app/DOCS.md): use `adapter_only`, keep `ingress_only: true`, set a long random `gateway_token`, and start with `local_only` privacy.
-3. Install the separate `ha_switchboard` Core integration through HACS or by copying `custom_components/ha_switchboard/`. Add it from **Settings → Devices & services → Add integration** and accept Supervisor discovery. If discovery is unavailable, use the discovered App host and port with the same token.
+3. Install the separate `ha_switchboard` Core integration through HACS or by copying `custom_components/ha_switchboard/`. HACS requires the exported GitHub repository to be reachable; manual copy is the local source path. Add it from **Settings → Devices & services → Add integration** and accept Supervisor discovery. If discovery is unavailable, use the discovered App host and port with the same token.
 4. In **Settings → Voice assistants**, choose **HA Switchboard** as the Conversation agent for an Assist pipeline.
 5. Open the App Web UI, choose **Scan Home Assistant now**, and wait for profile status to become `active`.
 6. Send a read-only test request first, then a low-risk exposed-device request. The App alone is not an Assist agent and does not create Home Assistant device entities.
@@ -95,6 +193,13 @@ HACS is not required to install or run the Supervisor App. It is one way to
 install the separate `ha_switchboard` Core integration, which is required only
 for the full Conversation/Assist path. Until that integration is accepted into
 HACS's default catalog, add [`grayslawson/ha-switchboard`](https://github.com/grayslawson/ha-switchboard) as a HACS **Integration** custom repository, or install `custom_components/ha_switchboard/` manually.
+
+The repository metadata is deliberately minimal: `hacs.json` enables README
+rendering and release-archive installation, while `repository.yaml` names the
+repository, URL, and maintainer. Those files make the source HACS-shaped; they
+do not prove HACS validation, default-catalog acceptance, or a public GitHub
+release. HACS installs the Core integration only; it does not install or update
+the Supervisor App.
 
 Install **HA Switchboard**, restart Home Assistant, and add it from **Settings → Devices & services → Add integration**. The integration stores the gateway URL and token in a Home Assistant config entry; do not put either value in YAML committed to source control.
 
@@ -117,7 +222,7 @@ export FALLBACK_PROVIDER="disabled"
 export FALLBACK_ENDPOINT=""
 export FALLBACK_MODEL=""
 export FALLBACK_API_KEY=""
-export GATEWAY_TOKEN="use-a-long-random-token"
+export GATEWAY_TOKEN="$(openssl rand -hex 32)"
 
 docker compose -f standalone/compose.yaml up -d
 curl http://127.0.0.1:8099/healthz
@@ -133,7 +238,12 @@ hosted Jev but not hosted fallback. `fallback_provider: disabled` sends no
 fallback request. Protect the published port with your own network boundary
 and gateway token; Compose has no Supervisor ingress boundary.
 
-The public App image is available at [`ghcr.io/grayslawson/ha-switchboard`](https://ghcr.io/grayslawson/ha-switchboard). A public tag is not proof that the current local source has been published; compare the requested release tag and image revision before installing. Published images carry the GitHub source label used by the release verification job.
+The configured App image reference is
+[`ghcr.io/grayslawson/ha-switchboard`](https://ghcr.io/grayslawson/ha-switchboard).
+This checkout does not prove that a matching public tag or digest exists, is
+multi-architecture, or carries the current source revision. Verify those
+external artifacts before installing; an image reference in `app/config.yaml`
+is not publication evidence.
 
 ## Configuration
 
@@ -145,15 +255,16 @@ guide is in [app/DOCS.md](app/DOCS.md).
 | Option | Purpose |
 | --- | --- |
 | `ingress_only` | Keep `true`. The WebUI is ingress-only; direct `/v1/*` Core calls require the matching `gateway_token` and do not require this option to be disabled. |
-| `gateway_mode` | Use `adapter_only`. `supervisor_read_only` is accepted by the schema but currently has no separate runtime behavior. |
-| `jev_endpoint` | In this worktree, use `https://openrouter.ai/api/alpha/decisions` for native OpenRouter Jev, or a Switchboard-compatible typed service. A public image may predate the native adapter; verify the target tag. |
-| `jev_model` | `typesafe/jev-1.13` for the native OpenRouter Decisions adapter; ignored by custom typed services. |
+| `gateway_mode` | Use `adapter_only`. `supervisor_read_only` is a legacy persisted value; startup migration normalizes it to `adapter_only` and records an internal compatibility marker. It is not a current schema choice. |
+| `jev_provider` | `disabled` by default; choose `typesafe`, `openrouter`, or `compatible` to match the Jev wire contract. |
+| `jev_endpoint` | For `typesafe`, use a TypeSafe base URL or `/v1/systemone`; for `openrouter`, use `https://openrouter.ai/api/alpha/decisions`; for `compatible`, use a service that returns Switchboard's typed decision contract. A public image may predate the native adapter; verify the target tag. |
+| `jev_model` | `typesafe/jev-1.13` for OpenRouter Decisions or the configured TypeSafe model; compatible typed services may ignore it. |
 | `jev_api_key` | Credential for the configured Jev service; leave blank with no endpoint. This is not the gateway token. |
 | `gateway_token` | A long random bearer token for the Core integration and other direct callers. Use the same value in the Integration configuration. |
 | `profile_refresh_minutes` | Use `15`; accepted range is 1–1440. The Core integration reads this App setting and schedules complete-profile reconciliation. Use **Scan Home Assistant now** for an explicit scan. |
 | `privacy_mode` | Use `local_only` by default. `jev_hosted_allowed` is for a working hosted Jev adapter; `hosted_allowed` also permits hosted downstream routes. |
-| `fallback_provider` | `disabled` by default. Choose `openrouter` for an OpenRouter chat model or `typed_http` for a Switchboard-compatible route endpoint. |
-| `fallback_endpoint` / `fallback_model` / `fallback_api_key` | Configure the chosen fallback separately from Jev. For OpenRouter, use `https://openrouter.ai/api/v1/chat/completions`, a chat-model ID, and its API key. A typed HTTP route uses the Switchboard handoff contract. |
+| `fallback_provider` | `disabled` by default. Choose `openrouter` or `openai_compatible` for the generic OpenAI-compatible chat-completions adapter, or `typed_http` for a Switchboard-compatible route endpoint. |
+| `fallback_endpoint` / `fallback_model` / `fallback_api_key` | Configure the chosen fallback separately from Jev. For OpenRouter, use `https://openrouter.ai/api/v1/chat/completions`, a chat-model ID, and its API key. A typed HTTP route uses the Switchboard handoff contract. The legacy persisted `fallback_base_url` name is migrated to `fallback_endpoint`; it is not a current App option. |
 
 Keep credentials in Supervisor options or the deployment's runtime secret mechanism. Never commit them to Compose files, fixtures, logs, or the repository.
 
@@ -178,9 +289,13 @@ public image may predate this adapter; verify the target tag. Do not use
 [OpenRouter API specification](https://openrouter.ai/openapi.json),
 [Typesafe model page](https://openrouter.ai/typesafe), and the [App guide](app/DOCS.md).
 
-Fallback is opt-in. An OpenRouter fallback also requires `privacy_mode:
-hosted_allowed`; `jev_hosted_allowed` permits hosted Jev but not a hosted
-fallback. You can instead configure a local typed HTTP route subject to the
+Fallback is opt-in. The `openrouter` fallback is a generic OpenAI-compatible
+chat-completions adapter; its default endpoint is
+`https://openrouter.ai/api/v1/chat/completions`, and it requires
+`fallback_model` plus `fallback_api_key` when the service requires
+authentication. It also requires `privacy_mode: hosted_allowed`;
+`jev_hosted_allowed` permits hosted Jev but not a hosted fallback. You can
+instead configure a local typed HTTP route subject to the
 same bounded proposal checks. Switchboard cannot safely call an arbitrary Home
 Assistant conversation agent as a fallback: that agent might execute its own
 actions outside Switchboard's checks. It needs a typed adapter that returns a
@@ -261,7 +376,7 @@ The scanner is a development/adapter utility, not a replacement for a production
 - The gateway receives sanitized snapshots, opaque capability identifiers, bounded context, and minimized state.
 - Jev and downstream routes receive only the bounded payload permitted by the selected privacy mode and route policy.
 - A downstream model cannot choose a provider by name, invent arbitrary capabilities, or bypass confirmation and freshness checks.
-- Supervisor App ingress accepts the Supervisor source address only. The App is non-privileged and does not use host networking. Its source manifest does not grant broad Home Assistant API access; runtime discovery and option loading use only the scoped Supervisor self-information and discovery endpoints.
+- Supervisor App Web UI/static ingress accepts the Supervisor source address only; health/readiness checks remain available for liveness. The App is non-privileged and does not use host networking. Its source manifest does not grant broad Home Assistant API access; runtime discovery and option loading use only the scoped Supervisor self-information and discovery endpoints.
 - The standalone deployment has no Supervisor boundary; secure it with your own network controls and a gateway token.
 
 The App follows Home Assistant's [App security guidance](https://developers.home-assistant.io/docs/apps/security/):
@@ -277,14 +392,24 @@ See [app/DOCS.md](app/DOCS.md) for App-specific behavior and [docs/RELEASE.md](d
 
 The repository intentionally does not claim more than the current implementation provides:
 
-- The gateway has a typed Jev HTTP client, but Jev itself is an external service; no Jev model is bundled.
+- The direct TypeSafe System One client, OpenRouter Decisions adapter, and generic typed Jev client have different wire contracts. The Supervisor App options select OpenRouter Decisions by its exact URL or a generic typed Jev endpoint; direct TypeSafe selection is an explicitly managed runtime environment path rather than an App-store option.
 - The native OpenRouter adapter handles parameter-free controls only. Parameterized controls have Core-side schemas and validation, but the current question flow does not collect their values; a compatible typed service or future value-extraction stage must supply them.
-- Explicit plural on/off requests for exposed lights, switches, or fans can form a bounded group of at most 32 targets. Core preflights every member and executes sequentially; a mid-batch failure can leave earlier verified actions in place. Other multi-device actions are not yet supported. The Conversation entity does not carry a pending clarification or confirmation into the next turn.
+- Explicit plural on/off requests for exposed lights, switches, or fans can form a bounded group of at most 32 targets. Core preflights every member and executes sequentially; a mid-batch failure can leave earlier verified actions in place. Other multi-device actions are not yet supported.
+- Clarification, parameter, and confirmation follow-ups are stored only in the Core integration's bounded in-memory context store. Entries are matched to the Home Assistant conversation and user, expire after a short TTL, and are consumed before the follow-up can authorize execution. The current unit coverage proves the store lifecycle; a complete live Assist/E2E acceptance run remains open.
+- Exposed script and scene routines can be present in the sanitized profile and offered as descriptive rows, but Core's execution boundary rejects their `activate` operation. They are not an execution claim or a substitute for direct Home Assistant script/scene services.
 - OpenRouter and typed HTTP fallback routes are configurable in the App but disabled by default. An arbitrary Home Assistant conversation agent is not a safe drop-in fallback without a typed adapter. If no eligible fallback is configured, Switchboard asks for clarification or refuses an unsafe action.
-- The current Core integration provides Supervisor discovery, a Conversation entity, and the execution/verification boundary. Profile refresh wiring and broader Home Assistant coverage remain in progress.
-- The read-only scanner covers a useful baseline of entities and services; it does not yet model every Home Assistant integration, automation, script, scene, area, device, or Assist surface.
+- The current Core integration provides Supervisor discovery, a Conversation entity, startup/periodic/recovery profile reconciliation, registry invalidation, and the execution/verification boundary. The profile adapter intentionally covers a bounded capability surface rather than every Home Assistant integration.
+- The read-only scanner and Core profile adapter cover a useful baseline of entities, services, areas, floors, labels, routines, and exposure state; they do not yet model every Home Assistant integration, automation, device, or Assist surface.
 - Voice hardware, dashboards, HACS, Wyoming, ESPHome, and companion apps are compatibility targets—not bundled components.
 - The App is marked experimental and has not been presented as a production-ready Home Assistant App or accepted into the default HACS catalog.
+
+The following release gates remain open unless separately recorded with
+matching evidence: complete live Assist/E2E coverage, AppArmor enforcement on
+the installed App, protected-master ancestry, public mirror/tag and GitHub
+Release, GHCR immutable multi-architecture digest and source labels, HACS and
+Hassfest validation on the exported tree, provider acceptance, and an
+installed App/Core update-and-rollback canary. Local tests, fixtures, metadata,
+or a local image cannot close those gates.
 
 Planned work includes richer Home Assistant discovery and change subscriptions, provider adapters with explicit privacy/cost controls, profile management in the App UI, broader capability coverage, and compatibility testing across established voice and dashboard projects.
 
@@ -365,6 +490,22 @@ remove the container unless `HA_SWITCHBOARD_ALLOW_DEV_RESET=1` is explicitly
 set. Take and verify a volume snapshot before using either command. The
 release manifest and published-image configuration in the real worktree are
 never modified by the local-build staging flow.
+
+For an App/Core update, record the current App digest, Core config entry,
+profile status, and verified snapshot first. Update the matching App and Core
+artifacts together, refresh the App so Supervisor does not retain a cached
+manifest, reconcile the profile, and test a read-only request before a
+low-risk control. If migration fails, restore the known snapshot and the
+matching previous App/Core pair; do not reset the local volume or roll back
+only one half of the pair. This is recovery guidance, not live-canary proof.
+
+The scan button returns an acknowledgement, not a completed profile. Wait for
+`profile_reconciled` and an `active` profile before attempting a write. A
+healthy `/healthz` or `/readyz` response alone does not prove that Core is
+connected or that Assist is configured. During source-only validation, do not
+invoke `tools/local-dev.sh` commands that restart/rebuild Core, remove a
+volume, or reset the harness; use the compile, test, and release-boundary
+checks instead.
 
 With the harness running, open Home Assistant at
 `http://localhost:7123/`. The devcontainer maps host port `7123` to the local

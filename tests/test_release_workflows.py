@@ -52,11 +52,48 @@ def test_release_version_gate_names_all_source_version_authorities() -> None:
 
 
 def test_release_gates_do_not_print_credentials() -> None:
-    for name in ("build-app.yml", "mirror-public.yml"):
+    for name in ("build-app.yml", "mirror-public.yml", "hacs.yml"):
         text = _workflow(name)
         assert "set -x" not in text
         assert "echo \"$GHCR_TOKEN\"" not in text
         assert "echo \"$GH_MIRROR_TOKEN\"" not in text
+
+
+def test_ci_and_metadata_workflows_validate_the_public_export() -> None:
+    ci = _workflow("ci.yml")
+    validation = _workflow("validation.yml")
+    hacs = _workflow("hacs.yml")
+    mirror = _workflow("mirror-public.yml")
+    for text in (ci, validation, hacs, mirror):
+        assert "ha-switchboard-export-public.py" in text
+        assert 'check_release_boundary.py" --root "$RUNNER_TEMP/public"' in text
+        assert 'test ! -e "$RUNNER_TEMP/public/.forgejo"' in text
+    assert validation.index("Export and validate public tree") < validation.index("hassfest@sha256")
+    assert hacs.index("Export and validate public tree") < hacs.index("hacs/action@sha256")
+
+
+def test_release_publication_requires_static_and_external_metadata_evidence() -> None:
+    mirror = _workflow("mirror-public.yml")
+    assert mirror.index("Validate release workflows before publication") < mirror.index("Push public master")
+    assert mirror.index("Validate exported Core metadata with Hassfest") < mirror.index("Push public master")
+    assert mirror.index("Verify public mirror ref") < mirror.index("Validate published Core metadata with HACS")
+    assert mirror.index("Validate published Core metadata with HACS") < mirror.index("Create or update GitHub release from tag")
+    assert "actionlint -config-file" in mirror
+    assert "hassfest@sha256" in mirror
+    assert "hacs/action@sha256" in mirror
+    assert "sleep 10" in mirror
+    assert "for attempt in {1..18}" in mirror
+
+
+def test_release_workflows_use_exact_source_revision_and_release_paths() -> None:
+    build = _workflow("build-app.yml")
+    mirror = _workflow("mirror-public.yml")
+    assert '--revision "${GITHUB_SHA}"' in build
+    assert '--revision "$GITHUB_SHA"' in mirror
+    assert 'test "${ref_name#v}" = "$version"' in build
+    assert 'test "${ref_name#v}" = "$version"' in mirror
+    assert 'git merge-base --is-ancestor "$tag_commit" "$master_ref"' in mirror
+    assert "push --force github HEAD:master" in mirror
 
 
 def test_release_source_versions_are_consistent() -> None:

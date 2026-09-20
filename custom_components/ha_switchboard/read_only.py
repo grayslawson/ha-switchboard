@@ -73,7 +73,7 @@ def read_only_answer(
     matches: list[tuple[Mapping[str, Any], Any]] = []
     seen: set[str] = set()
     for row in rows:
-        if not isinstance(row, Mapping) or not row.get("exposed") or not row.get("available", True):
+        if not isinstance(row, Mapping) or not row.get("exposed"):
             continue
         terms = [_norm(row.get("name")), _norm(row.get("area"))]
         aliases = row.get("aliases", ())

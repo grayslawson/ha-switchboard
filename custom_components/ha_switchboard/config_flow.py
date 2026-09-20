@@ -32,8 +32,14 @@ def _validate_url(value: Any) -> str:
     if not isinstance(value, str) or not value.strip() or len(value) > 512:
         raise DiscoveryValidationError("gateway URL is required")
     value = value.strip().rstrip("/")
-    parsed = urlsplit(value)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+    if any(ord(char) < 0x20 or ord(char) == 0x7F for char in value):
+        raise DiscoveryValidationError("gateway URL contains control characters")
+    try:
+        parsed = urlsplit(value)
+        hostname = parsed.hostname
+    except ValueError as exc:
+        raise DiscoveryValidationError("gateway URL is malformed") from exc
+    if parsed.scheme not in {"http", "https"} or not hostname:
         raise DiscoveryValidationError("gateway URL must use http or https")
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise DiscoveryValidationError("gateway URL may not contain credentials or query data")
@@ -43,7 +49,6 @@ def _validate_url(value: Any) -> str:
         raise DiscoveryValidationError("gateway port is invalid") from exc
     if port is not None and not 1 <= port <= 65535:
         raise DiscoveryValidationError("gateway port is invalid")
-    hostname = parsed.hostname
     if hostname and ":" in hostname and not hostname.startswith("["):
         hostname = f"[{hostname}]"
     netloc = hostname or ""
@@ -116,7 +121,7 @@ def validate_discovery_payload(payload: Mapping[str, Any] | Any) -> GatewayEndpo
     token = values.get(CONF_GATEWAY_TOKEN, values.get("token", ""))
     if token is None:
         token = ""
-    if not isinstance(token, str) or len(token) > 512:
+    if not isinstance(token, str) or len(token) > 512 or any(ord(char) < 0x20 or ord(char) == 0x7F for char in token):
         raise DiscoveryValidationError("discovery token is invalid")
 
     title = values.get("_discovery_name") or values.get("name") or "HA Switchboard"
@@ -130,7 +135,7 @@ def validate_manual_input(user_input: Mapping[str, Any]) -> GatewayEndpoint:
         raise DiscoveryValidationError("setup input must be an object")
     url = _validate_url(user_input.get(CONF_GATEWAY_URL))
     token = user_input.get(CONF_GATEWAY_TOKEN, "")
-    if not isinstance(token, str) or len(token) > 512:
+    if not isinstance(token, str) or len(token) > 512 or any(ord(char) < 0x20 or ord(char) == 0x7F for char in token):
         raise DiscoveryValidationError("gateway token is invalid")
     return GatewayEndpoint(url, opaque_id("gateway", url), token)
 

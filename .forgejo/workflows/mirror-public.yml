@@ -10,7 +10,8 @@ on:
       - "app/**"
       - "custom_components/**"
       - "standalone/**"
-      - "tests/**"
+      - "tests/test_release_boundary.py"
+      - "tests/test_ghcr_revision_gate.py"
       - "tools/check_release_boundary.py"
       - "tools/ha-switchboard-scan.py"
       - "tools/verify-ghcr-image.py"
@@ -21,6 +22,7 @@ on:
       - "pyproject.toml"
       - "repository.yaml"
       - ".forgejo/workflows/mirror-public.yml"
+      - "tools/app-image-e2e.sh"
   workflow_dispatch:
 
 concurrency:
@@ -80,12 +82,34 @@ jobs:
           }
           if len(set(values.values())) != 1:
               raise SystemExit("release source version mismatch: " + ", ".join(f"{path}={value}" for path, value in values.items()))
-          print(f"release source version consistent: {next(iter(values.values()))}")
+          version = next(iter(values.values()))
+          changelog = (root / "app/CHANGELOG.md").read_text(encoding="utf-8")
+          marker = f"## {version} — source release candidate (not published)"
+          if marker not in changelog:
+              raise SystemExit(f"app/CHANGELOG.md is missing release marker: {marker}")
+          print(f"release source version consistent: {version}; app/CHANGELOG.md is authoritative")
           PY
       - name: Export allowlisted public tree
         run: |
+          set -euo pipefail
           python3 tools/ha-switchboard-export-public.py "$RUNNER_TEMP/public"
           python3 "$RUNNER_TEMP/public/tools/check_release_boundary.py" --root "$RUNNER_TEMP/public"
+          test -f "$RUNNER_TEMP/public/app/config.yaml"
+          test -f "$RUNNER_TEMP/public/custom_components/ha_switchboard/manifest.json"
+          test ! -e "$RUNNER_TEMP/public/.forgejo"
+          test ! -e "$RUNNER_TEMP/public/.github"
+      - name: Validate release workflows before publication
+        run: |
+          set -euo pipefail
+          command -v actionlint
+          actionlint -config-file .github/actionlint.yaml .forgejo/workflows/*.yml
+      - name: Validate exported Core metadata with Hassfest
+        run: |
+          set -euo pipefail
+          command -v podman
+          podman run --rm --workdir /github/workspace \
+            --volume "$RUNNER_TEMP/public:/github/workspace:ro" \
+            ghcr.io/home-assistant/hassfest@sha256:66b55a8ce14cdcf0c200dd4dab1f3228ac8d3f6e0404ec710a0d8a79b296eba4
       - name: Gate release on matching multi-architecture App image
         if: ${{ forgejo.ref_type == 'tag' }}
         env:
@@ -126,7 +150,7 @@ jobs:
           git -C "$RUNNER_TEMP/public" add --all
           git -C "$RUNNER_TEMP/public" commit -m "Mirror Forgejo ${GITHUB_SHA}"
           git -C "$RUNNER_TEMP/public" remote add github https://github.com/grayslawson/ha-switchboard.git
-          if [ "${GITHUB_REF_TYPE:-branch}" = "tag" ]; then
+          if [ "${FORGEJO_REF_TYPE:-${GITHUB_REF_TYPE:-branch}}" = "tag" ]; then
             # A release tag is immutable. A rerun must not silently replace
             # the source revision behind an already published GitHub release.
             git -C "$RUNNER_TEMP/public" -c "http.extraheader=AUTHORIZATION: basic ${auth_header}" push github "HEAD:refs/tags/${GITHUB_REF_NAME}"
@@ -149,6 +173,32 @@ jobs:
           test -n "$remote_sha"
           test "$remote_sha" = "$expected_sha"
           echo "GitHub mirror verified: $remote_ref -> $remote_sha"
+      - name: Validate published Core metadata with HACS
+        env:
+          GH_MIRROR_TOKEN: ${{ secrets.GH_MIRROR_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$GH_MIRROR_TOKEN"
+          export INPUT_GITHUB_TOKEN="$GH_MIRROR_TOKEN"
+          ref_name="${FORGEJO_REF_NAME:-${GITHUB_REF_NAME:-master}}"
+          if [ "${FORGEJO_REF_TYPE:-${GITHUB_REF_TYPE:-branch}}" != tag ]; then
+            ref_name=master
+          fi
+          podman run --rm \
+            --env INPUT_GITHUB_TOKEN \
+            --env REPOSITORY=grayslawson/ha-switchboard \
+            --env CATEGORY=integration \
+            --env REPOSITORY_REF="$ref_name" \
+            --env GITHUB_WORKSPACE=/github/workspace \
+            --volume "$RUNNER_TEMP/public:/github/workspace:ro" \
+            ghcr.io/hacs/action@sha256:dc92fdad2f6ffbe74bffb7269d781ea8e064f52d9bb486cdf3925d74e7ab6ebf
+          unset INPUT_GITHUB_TOKEN
+      - name: Run bounded App image E2E gate before tag publication
+        if: ${{ forgejo.ref_type == 'tag' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tools/app-image-e2e.sh
       - name: Create or update GitHub release from tag
         if: ${{ forgejo.ref_type == 'tag' }}
         env:

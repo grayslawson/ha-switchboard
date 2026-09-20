@@ -1,3 +1,5 @@
 {
-  "name": "HA Switchboard"
+  "name": "HA Switchboard",
+  "render_readme": true,
+  "zip_release": true
 }

@@ -7,7 +7,7 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 ROOT_KEY="$(printf '%s' "$ROOT_DIR" | sha256sum | cut -c1-12)"
-STAGE_DIR="${TMPDIR:-/tmp}/ha-switchboard-local-${ROOT_KEY}"
+STAGE_DIR="${HA_SWITCHBOARD_STAGE_DIR:-${TMPDIR:-/tmp}/ha-switchboard-local-${ROOT_KEY}}"
 APP_SLUG="local_ha_switchboard"
 WAIT_SECONDS="${HA_SWITCHBOARD_WAIT_SECONDS:-180}"
 LOCAL_HA_URL="${HA_SWITCHBOARD_LOCAL_HA_URL:-http://127.0.0.1:7123/}"
@@ -29,10 +29,14 @@ load_local_test_options() {
     key="${BASH_REMATCH[1]}"
     value="${BASH_REMATCH[2]}"
     case "$key" in
-      HA_SWITCHBOARD_JEV_ENDPOINT|HA_SWITCHBOARD_JEV_API_KEY|HA_SWITCHBOARD_GATEWAY_TOKEN|HA_SWITCHBOARD_PROFILE_REFRESH_MINUTES|HA_SWITCHBOARD_PRIVACY_MODE) ;;
+      HA_SWITCHBOARD_JEV_ENDPOINT|HA_SWITCHBOARD_JEV_API_KEY|HA_SWITCHBOARD_FALLBACK_PROVIDER|HA_SWITCHBOARD_FALLBACK_ENDPOINT|HA_SWITCHBOARD_FALLBACK_MODEL|HA_SWITCHBOARD_FALLBACK_API_KEY|HA_SWITCHBOARD_GATEWAY_TOKEN|HA_SWITCHBOARD_PROFILE_REFRESH_MINUTES|HA_SWITCHBOARD_PRIVACY_MODE) ;;
       *) echo "Unsupported local option name: $key" >&2; return 2 ;;
     esac
-    if [[ "$value" == \"*\" || "$value" == \'*\' ]]; then
+    if [[ "${value:0:1}" == '"' || "${value:0:1}" == "'" ]]; then
+      [[ "${#value}" -ge 2 && "${value: -1}" == "${value:0:1}" ]] || {
+        echo "Invalid local option quoting for $key." >&2
+        return 2
+      }
       value="${value:1:${#value}-2}"
     fi
     # Explicitly exported values win; this parser never evaluates shell code.
@@ -63,8 +67,10 @@ Commands:
   e2e         Run the local Supervisor, Home Assistant, and App ingress checks.
   logs        Follow the local App logs.
   stop        Stop the local App.
-  down        Remove the devcontainer only with HA_SWITCHBOARD_ALLOW_DEV_RESET=1.
-  clean       Remove the devcontainer and staging copy only with that guard.
+  snapshot    Create and verify a local Supervisor/Core volume snapshot.
+  reset       Destructively remove the local harness after a verified snapshot.
+  down        Refuse by default; use snapshot then reset for removal.
+  clean       Refuse by default; use snapshot then reset for removal.
 
 The staging copy is used because the release app/config.yaml intentionally
 contains image: ghcr.io/...; Home Assistant requires image: to be absent for
@@ -72,13 +78,34 @@ local Supervisor builds. Source edits remain in the real worktree.
 
 For configure/e2e, these variables may be exported or placed as literal
 NAME=value lines in ignored .env.local (exported values win): HA_SWITCHBOARD_JEV_ENDPOINT,
-HA_SWITCHBOARD_JEV_API_KEY, HA_SWITCHBOARD_GATEWAY_TOKEN,
+HA_SWITCHBOARD_JEV_API_KEY, HA_SWITCHBOARD_FALLBACK_PROVIDER,
+HA_SWITCHBOARD_FALLBACK_ENDPOINT, HA_SWITCHBOARD_FALLBACK_MODEL,
+HA_SWITCHBOARD_FALLBACK_API_KEY, HA_SWITCHBOARD_GATEWAY_TOKEN,
 HA_SWITCHBOARD_PROFILE_REFRESH_MINUTES, HA_SWITCHBOARD_PRIVACY_MODE.
 Values are passed through the process environment, never written to this tree.
 The Supervisor/Core data lives in a Docker volume. Removing the devcontainer
 can detach that volume and make a new local Home Assistant appear unconfigured.
-Take a verified volume snapshot before using down or clean.
+Use 'snapshot' before the explicit 'reset' command. Normal commands never
+remove the devcontainer or its Supervisor/Core volume.
 EOF
+}
+
+validate_wait_seconds() {
+  [[ "$WAIT_SECONDS" =~ ^[1-9][0-9]*$ ]] || {
+    echo "HA_SWITCHBOARD_WAIT_SECONDS must be a positive integer." >&2
+    return 2
+  }
+}
+
+require_existing_harness() {
+  [[ -d "$STAGE_DIR" ]] || {
+    echo "No local harness exists; run tools/local-dev.sh up first." >&2
+    return 1
+  }
+  [[ -n "$(devcontainer_id)" ]] || {
+    echo "No existing local devcontainer found; refusing to create a fresh Home Assistant environment." >&2
+    return 1
+  }
 }
 
 run_devcontainer() {
@@ -121,14 +148,54 @@ remove_devcontainer() {
 }
 
 require_dev_reset_guard() {
-  if [[ "${HA_SWITCHBOARD_ALLOW_DEV_RESET:-}" != "1" ]]; then
-    echo "Refusing to remove the devcontainer: its Supervisor/Core data is in a Docker volume." >&2
-    echo "Take a verified snapshot, then set HA_SWITCHBOARD_ALLOW_DEV_RESET=1 if removal is intentional." >&2
+  if [[ "${HA_SWITCHBOARD_ALLOW_DEV_RESET:-}" != "1" || "${HA_SWITCHBOARD_RESET_CONFIRM:-}" != "RESET_LOCAL_HA_SWITCHBOARD" ]]; then
+    echo "Refusing destructive local reset: require a verified snapshot, HA_SWITCHBOARD_ALLOW_DEV_RESET=1, and HA_SWITCHBOARD_RESET_CONFIRM=RESET_LOCAL_HA_SWITCHBOARD." >&2
     return 1
   fi
 }
 
+snapshot_path() {
+  printf '%s\n' "${HA_SWITCHBOARD_SNAPSHOT_FILE:-${TMPDIR:-/tmp}/ha-switchboard-local-${ROOT_KEY}.snapshot.tar.gz}"
+}
+
+snapshot_local_volume() {
+  require_existing_harness
+  local container_id target snapshot_dir
+  container_id="$(devcontainer_id)"
+  target="$(snapshot_path)"
+  snapshot_dir="$(dirname -- "$target")"
+  mkdir -p -- "$snapshot_dir"
+  [[ ! -e "$target" ]] || {
+    echo "Refusing to overwrite existing snapshot: $target" >&2
+    return 1
+  }
+  docker run --rm --volumes-from "$container_id" -v "$snapshot_dir:/backup" alpine:3.20 \
+    sh -c 'tar -czf "/backup/$(basename "$1")" /mnt/supervisor' sh "$(basename -- "$target")" >/dev/null
+  tar -tzf "$target" >/dev/null
+  printf 'Verified local Supervisor/Core snapshot: %s\n' "$target"
+}
+
+reset_local_harness() {
+  require_dev_reset_guard
+  local target
+  target="$(snapshot_path)"
+  [[ -s "$target" ]] || {
+    echo "Refusing destructive local reset: verified snapshot is missing: $target" >&2
+    return 1
+  }
+  tar -tzf "$target" >/dev/null || {
+    echo "Refusing destructive local reset: snapshot verification failed: $target" >&2
+    return 1
+  }
+  require_existing_harness
+  run_in_container sh -lc "ha apps stop '$APP_SLUG' >/dev/null 2>&1 || true" || true
+  remove_devcontainer
+  rm -rf -- "$STAGE_DIR"
+  echo "Local harness removed after verified snapshot: $target" >&2
+}
+
 wait_for_supervisor() {
+  validate_wait_seconds
   local deadline=$((SECONDS + WAIT_SECONDS))
   echo "Waiting for local Supervisor readiness (up to ${WAIT_SECONDS}s)..." >&2
   while (( SECONDS < deadline )); do
@@ -137,7 +204,7 @@ wait_for_supervisor() {
       >/dev/null 2>&1; then
       return 0
     fi
-    sleep 2
+    (( SECONDS < deadline )) && sleep 2
   done
   echo "Local Supervisor did not become healthy within ${WAIT_SECONDS}s." >&2
   echo "Run 'tools/local-dev.sh start-ha' in another terminal and retry." >&2
@@ -145,6 +212,7 @@ wait_for_supervisor() {
 }
 
 wait_for_http() {
+  validate_wait_seconds
   local url="$1"
   local label="$2"
   local deadline=$((SECONDS + WAIT_SECONDS))
@@ -155,7 +223,7 @@ wait_for_http() {
     if [[ "$status" =~ ^[23][0-9][0-9]$ ]]; then
       return 0
     fi
-    sleep 2
+    (( SECONDS < deadline )) && sleep 2
   done
   echo "${label} did not become reachable (last HTTP status ${status})." >&2
   return 1
@@ -167,6 +235,7 @@ app_state() {
 }
 
 wait_for_app_started() {
+  validate_wait_seconds
   local deadline=$((SECONDS + WAIT_SECONDS))
   local state=""
   echo "Waiting for ${APP_SLUG} to reach started state..." >&2
@@ -179,13 +248,14 @@ wait_for_app_started() {
       echo "${APP_SLUG} entered Supervisor error state." >&2
       return 1
     fi
-    sleep 2
+    (( SECONDS < deadline )) && sleep 2
   done
   echo "${APP_SLUG} did not reach started state (last state: ${state:-unknown})." >&2
   return 1
 }
 
-  wait_for_app_ingress() {
+wait_for_app_ingress() {
+  validate_wait_seconds
   local deadline=$((SECONDS + WAIT_SECONDS))
   echo "Waiting for ${APP_SLUG} ingress health..." >&2
   while (( SECONDS < deadline )); do
@@ -197,11 +267,13 @@ wait_for_app_started() {
       test -n "$app"
       app_ip="$(docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" "$app")"
       docker exec hassio_supervisor python3 -c "import json,urllib.request; r=urllib.request.urlopen(\"http://$app_ip:8099/healthz\"); body=json.load(r); assert r.status == 200 and body.get(\"status\") == \"ok\""
+      ready_status="$(docker exec hassio_supervisor curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "http://$app_ip:8099/readyz")"
+      case "$ready_status" in 200|503) ;; *) exit 1 ;; esac
     ' >/dev/null 2>&1; then
       echo "${APP_SLUG} ingress health passed." >&2
       return 0
     fi
-    sleep 2
+    (( SECONDS < deadline )) && sleep 2
   done
   echo "${APP_SLUG} did not pass the Supervisor-source ingress health check." >&2
   return 1
@@ -212,7 +284,7 @@ install_app() {
 }
 
 has_local_options_env() {
-  [[ -n "${HA_SWITCHBOARD_JEV_ENDPOINT:-}${HA_SWITCHBOARD_JEV_API_KEY:-}${HA_SWITCHBOARD_GATEWAY_TOKEN:-}${HA_SWITCHBOARD_PROFILE_REFRESH_MINUTES:-}${HA_SWITCHBOARD_PRIVACY_MODE:-}" ]]
+  [[ -n "${HA_SWITCHBOARD_JEV_ENDPOINT:-}${HA_SWITCHBOARD_JEV_API_KEY:-}${HA_SWITCHBOARD_FALLBACK_PROVIDER:-}${HA_SWITCHBOARD_FALLBACK_ENDPOINT:-}${HA_SWITCHBOARD_FALLBACK_MODEL:-}${HA_SWITCHBOARD_FALLBACK_API_KEY:-}${HA_SWITCHBOARD_GATEWAY_TOKEN:-}${HA_SWITCHBOARD_PROFILE_REFRESH_MINUTES:-}${HA_SWITCHBOARD_PRIVACY_MODE:-}" ]]
 }
 
 configure_app() {
@@ -252,11 +324,15 @@ with urlopen(Request(base + "/info", headers=headers), timeout=10) as response:
 names = {
     "HA_SWITCHBOARD_JEV_ENDPOINT": "jev_endpoint",
     "HA_SWITCHBOARD_JEV_API_KEY": "jev_api_key",
+    "HA_SWITCHBOARD_FALLBACK_PROVIDER": "fallback_provider",
+    "HA_SWITCHBOARD_FALLBACK_ENDPOINT": "fallback_endpoint",
+    "HA_SWITCHBOARD_FALLBACK_MODEL": "fallback_model",
+    "HA_SWITCHBOARD_FALLBACK_API_KEY": "fallback_api_key",
     "HA_SWITCHBOARD_GATEWAY_TOKEN": "gateway_token",
     "HA_SWITCHBOARD_PRIVACY_MODE": "privacy_mode",
 }
 for environment_name, option_name in names.items():
-    if value := os.environ.get(environment_name):
+    if (value := os.environ.get(environment_name)) is not None:
         options[option_name] = value
 
 if minutes := os.environ.get("HA_SWITCHBOARD_PROFILE_REFRESH_MINUTES"):
@@ -308,6 +384,7 @@ hacs_installed() {
 }
 
 wait_for_hacs_download() {
+  validate_wait_seconds
   local app_slug="$1"
   local deadline=$((SECONDS + WAIT_SECONDS))
   local state=""
@@ -323,7 +400,7 @@ wait_for_hacs_download() {
       echo "The Get HACS app entered Supervisor error state." >&2
       return 1
     fi
-    sleep 2
+    (( SECONDS < deadline )) && sleep 2
   done
   echo "The Get HACS app did not install the HACS integration within ${WAIT_SECONDS}s." >&2
   return 1
@@ -413,6 +490,7 @@ sync_stage() {
     "$STAGE_DIR/app/config.yaml"
 }
 
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
 case "${1:-help}" in
   configure|e2e) load_local_test_options ;;
 esac
@@ -429,39 +507,41 @@ case "${1:-help}" in
     run_devcontainer up --workspace-folder "$STAGE_DIR" --log-level info
     ;;
   start-ha)
-    [[ -d "$STAGE_DIR" ]] || sync_stage
+    require_existing_harness
     run_in_container supervisor_run
     ;;
   wait)
-    [[ -d "$STAGE_DIR" ]] || sync_stage
+    require_existing_harness
     wait_for_supervisor
     wait_for_http "$LOCAL_HA_URL" "Home Assistant"
     wait_for_http "$LOCAL_OBSERVER_URL" "Supervisor observer"
     ;;
   store)
-    [[ -d "$STAGE_DIR" ]] || sync_stage
+    require_existing_harness
     wait_for_supervisor
     run_in_container sh -lc "ha store reload && ha store info --raw-json | jq '.data.addons[] | select(.slug == \"$APP_SLUG\")'"
     ;;
   install)
-    [[ -d "$STAGE_DIR" ]] || sync_stage
+    require_existing_harness
     wait_for_supervisor
     install_app
     wait_for_app_started
     ;;
   install-hacs)
-    [[ -d "$STAGE_DIR" ]] || sync_stage
+    require_existing_harness
     install_hacs
     ;;
   configure)
+    require_existing_harness
     wait_for_supervisor
     configure_app
     ;;
   sync-integration)
+    require_existing_harness
     sync_integration
     ;;
   start)
-    [[ -d "$STAGE_DIR" ]] || sync_stage
+    require_existing_harness
     wait_for_supervisor
     run_in_container ha apps start "$APP_SLUG"
     wait_for_app_started
@@ -477,7 +557,7 @@ case "${1:-help}" in
     wait_for_app_started
     ;;
   e2e)
-    sync_stage
+    require_existing_harness
     wait_for_supervisor
     wait_for_http "$LOCAL_HA_URL" "Home Assistant"
     wait_for_http "$LOCAL_OBSERVER_URL" "Supervisor observer"
@@ -494,25 +574,26 @@ case "${1:-help}" in
     echo "Local HA Switchboard E2E checks passed."
     ;;
   logs)
-    [[ -d "$STAGE_DIR" ]] || sync_stage
+    require_existing_harness
     run_in_container ha apps logs -f "$APP_SLUG"
     ;;
   stop)
-    [[ -d "$STAGE_DIR" ]] || exit 0
+    require_existing_harness
     run_in_container ha apps stop "$APP_SLUG"
     ;;
+  snapshot)
+    snapshot_local_volume
+    ;;
+  reset)
+    reset_local_harness
+    ;;
   down)
-    require_dev_reset_guard
-    [[ -d "$STAGE_DIR" ]] || exit 0
-    run_in_container sh -lc "ha apps stop '$APP_SLUG' >/dev/null 2>&1 || true" || true
-    remove_devcontainer
+    echo "Use 'tools/local-dev.sh snapshot' followed by the explicit 'reset' command; down never removes the local volume." >&2
+    exit 2
     ;;
   clean)
-    require_dev_reset_guard
-    [[ -d "$STAGE_DIR" ]] || exit 0
-    run_in_container sh -lc "ha apps stop '$APP_SLUG' >/dev/null 2>&1 || true" || true
-    remove_devcontainer
-    rm -rf -- "$STAGE_DIR"
+    echo "Use 'tools/local-dev.sh snapshot' followed by the explicit 'reset' command; clean never removes the local volume." >&2
+    exit 2
     ;;
   help|-h|--help)
     usage
@@ -523,3 +604,4 @@ case "${1:-help}" in
     exit 2
     ;;
 esac
+fi

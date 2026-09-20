@@ -10,6 +10,7 @@ from ha_switchboard.protocol import Complexity, JevDecision, ResultKind, RouteKi
 from ha_switchboard.store import ProfileStore
 from custom_components.ha_switchboard.capabilities import CapabilityTarget, operation_spec
 from custom_components.ha_switchboard.execution import ExecutionBoundary
+from custom_components.ha_switchboard.capabilities import resolve_batch_targets
 
 
 def _gateway(tmp_path: Path, snapshot: dict) -> Gateway:
@@ -175,3 +176,159 @@ def test_core_batch_stops_after_first_failed_verification():
 
     assert result == {"ok": False, "response_key": "batch_partial_failure", "verified_count": 1, "total_count": 3}
     assert executor.writes == ["one", "two"]
+
+
+def test_core_batch_rejects_duplicate_targets_and_caps_at_32_before_write():
+    target = CapabilityTarget("one", "one", "light.one", "light", "turn_on", operation_spec("light", "turn_on"))
+
+    class Executor:
+        def __init__(self):
+            self.writes = 0
+
+        def profile_current(self, revision):
+            return revision == "current"
+
+        async def resolve_capability(self, capability_id):
+            return target if capability_id == "one" else None
+
+        async def read_state(self, _target):
+            return {"state": "off", "attributes": {}}
+
+        async def execute(self, _target, _parameters):
+            self.writes += 1
+            return {"ok": True}
+
+        def verify(self, _target, _parameters, _before, _after, _result):
+            return True
+
+    executor = Executor()
+    duplicate = asyncio.run(ExecutionBoundary(executor).execute_batch_proposal(
+        capability_ids=("one", "one"), expected_profile_revision="current", current_profile_revision="current"
+    ))
+    oversized = asyncio.run(ExecutionBoundary(executor).execute_batch_proposal(
+        capability_ids=tuple("missing-%d" % index for index in range(33)),
+        expected_profile_revision="current", current_profile_revision="current",
+    ))
+    assert duplicate["response_key"] == oversized["response_key"] == "batch_invalid"
+    assert executor.writes == 0
+
+
+def test_core_target_resolver_supports_safe_area_label_and_group_phrases():
+    targets = tuple(
+        CapabilityTarget(
+            name, name, f"light.{name}", "light", "turn_on", operation_spec("light", "turn_on"),
+            display_name=display,
+        )
+        for name, display in (("kitchen", "Kitchen label group"), ("living", "Living room"))
+    )
+    assert [item.capability_id for item in resolve_batch_targets(targets, area="Kitchen")] == ["kitchen"]
+    assert [item.capability_id for item in resolve_batch_targets(targets, label="label")] == ["kitchen"]
+    assert [item.capability_id for item in resolve_batch_targets(targets, group="group")] == ["kitchen"]
+
+
+def test_batch_preflight_rejects_confirmation_member_without_writes():
+    safe = CapabilityTarget("safe", "safe", "light.safe", "light", "turn_on", operation_spec("light", "turn_on"))
+    confirm = CapabilityTarget("confirm", "confirm", "lock.front", "lock", "lock", operation_spec("lock", "lock"))
+
+    class Executor:
+        writes = 0
+
+        def profile_current(self, _revision):
+            return True
+
+        async def resolve_capability(self, capability_id):
+            return {"safe": safe, "confirm": confirm}.get(capability_id)
+
+        async def read_state(self, _target):
+            return {"state": "off", "attributes": {}}
+
+        async def execute(self, _target, _parameters):
+            self.writes += 1
+            return {"ok": True}
+
+        def verify(self, *_args):
+            return True
+
+    executor = Executor()
+    result = asyncio.run(ExecutionBoundary(executor).execute_batch_proposal(
+        capability_ids=("safe", "confirm"), expected_profile_revision="current", current_profile_revision="current"
+    ))
+    assert result["response_key"] == "batch_target_unavailable"
+    assert executor.writes == 0
+
+
+def test_batch_preflight_allows_mixed_safe_domains_and_replays_non_toggle_idempotently():
+    targets = {
+        "light": CapabilityTarget("light", "light", "light.one", "light", "turn_on", operation_spec("light", "turn_on")),
+        "switch": CapabilityTarget("switch", "switch", "switch.one", "switch", "turn_on", operation_spec("switch", "turn_on")),
+    }
+
+    class Executor:
+        def __init__(self):
+            self.writes = []
+            self.states = {key: "off" for key in targets}
+
+        def profile_current(self, _revision):
+            return True
+
+        async def resolve_capability(self, capability_id):
+            return targets.get(capability_id)
+
+        async def read_state(self, target):
+            return {"state": self.states[target.capability_id], "attributes": {}}
+
+        async def execute(self, target, _parameters):
+            self.writes.append(target.capability_id)
+            self.states[target.capability_id] = "on"
+            return {"ok": True}
+
+        def verify(self, _target, _parameters, _before, after, result):
+            return result["ok"] and after["state"] == "on"
+
+    executor = Executor()
+    boundary = ExecutionBoundary(executor)
+    first = asyncio.run(boundary.execute_batch_proposal(
+        capability_ids=("light", "switch"), expected_profile_revision="current", current_profile_revision="current", request_id="same-request"
+    ))
+    replay = asyncio.run(boundary.execute_batch_proposal(
+        capability_ids=("light", "switch"), expected_profile_revision="current", current_profile_revision="current", request_id="same-request"
+    ))
+    assert first["response_key"] == replay["response_key"] == "batch_execute_verified"
+    assert first["verified_count"] == replay["verified_count"] == 2
+    assert executor.writes == ["light", "switch"]
+
+
+def test_toggle_request_is_retryable_and_not_replayed_from_a_success_receipt():
+    target = CapabilityTarget("toggle", "toggle", "light.one", "light", "toggle", operation_spec("light", "toggle"))
+
+    class Executor:
+        def __init__(self):
+            self.state = "off"
+            self.writes = 0
+
+        def profile_current(self, _revision):
+            return True
+
+        async def resolve_capability(self, capability_id):
+            return target if capability_id == "toggle" else None
+
+        async def read_state(self, _target):
+            return {"state": self.state, "attributes": {}}
+
+        async def execute(self, _target, _parameters):
+            self.writes += 1
+            self.state = "on" if self.state == "off" else "off"
+            return {"ok": True}
+
+        def verify(self, _target, _parameters, before, after, result):
+            return result["ok"] and before["state"] != after["state"]
+
+    executor = Executor()
+    boundary = ExecutionBoundary(executor)
+    for _attempt in range(2):
+        result = asyncio.run(boundary.execute_proposal(
+            capability_id="toggle", parameters={}, expected_profile_revision="current",
+            current_profile_revision="current", confirmed=False, request_id="retry",
+        ))
+        assert result["response_key"] == "execute_verified"
+    assert executor.writes == 2

@@ -4,22 +4,25 @@ configuration:
     description: Keep this on. It blocks direct access to the dashboard; Home Assistant's Open Web UI button still works.
   gateway_mode:
     name: Home Assistant connection mode
-    description: Keep Adapter only. The Core integration discovers devices and performs actions; supervisor_read_only is currently inert.
+    description: Adapter only. The Core integration discovers devices and performs actions. Older supervisor_read_only settings are migrated automatically.
+  jev_provider:
+    name: Jev provider
+    description: Select disabled, direct TypeSafe System One, OpenRouter Decisions, or a compatible typed Jev service. Match jev_endpoint to the selected provider.
   jev_endpoint:
     name: Jev decision URL
-    description: Use https://openrouter.ai/api/alpha/decisions for OpenRouter Jev, or a compatible typed Jev service. This is not a chat-completions URL.
+    description: For TypeSafe, use its base URL or /v1/systemone; for OpenRouter use https://openrouter.ai/api/alpha/decisions; for compatible use a service that returns Switchboard's typed decision contract. This is not a chat-completions URL.
   jev_model:
     name: Jev model
-    description: Use typesafe/jev-1.13 for OpenRouter Decisions. A compatible custom Jev service may ignore this value.
+    description: Use typesafe/jev-1.13 for OpenRouter Decisions. A compatible typed Jev service may ignore this value; direct TypeSafe runtime clients use their own model input.
   jev_api_key:
     name: Jev API key
     description: Key for the Jev decision service. For OpenRouter Jev, enter your OpenRouter API key. This is never a Home Assistant token.
   fallback_provider:
     name: Fallback provider
-    description: Optional second model for requests Jev cannot complete. Disabled sends nothing to a fallback; OpenRouter uses a chat model; Typed HTTP requires a Switchboard-compatible proposal endpoint.
+    description: Optional second route for requests Jev cannot complete. Disabled sends nothing; OpenRouter and OpenAI-compatible use the generic chat-completions adapter; Typed HTTP requires a Switchboard-compatible handoff endpoint.
   fallback_endpoint:
     name: Fallback URL
-    description: OpenRouter defaults to its chat-completions URL when blank. For Typed HTTP, enter the URL of your compatible handoff service.
+    description: OpenRouter defaults to its chat-completions URL when blank and accepts a base URL or full path. For Typed HTTP, enter the URL of your compatible handoff service.
   fallback_model:
     name: Fallback model
     description: OpenRouter chat-model ID to use for fallback requests. Required when the fallback provider is OpenRouter.
@@ -31,7 +34,7 @@ configuration:
     description: Long random token that protects the gateway API. Enter the same token in the HA Switchboard integration. This is not a model-provider key.
   profile_refresh_minutes:
     name: Full profile refresh interval
-    description: Minutes for the Core worker's complete profile refresh loop. Use Scan now for an explicit first scan while this wiring is completed.
+    description: Minutes for the Core worker's complete profile refresh loop. Use Scan now for an explicit first scan or recovery request, then wait for profile status to become active.
   privacy_mode:
     name: Where requests may be sent
     description: Local only blocks hosted services. Jev hosted allowed permits hosted Jev but no hosted fallback. Hosted allowed also permits an explicitly configured hosted fallback.

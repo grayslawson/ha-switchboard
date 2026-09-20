@@ -28,6 +28,16 @@ def test_app_smoke_proves_non_root_server_on_supervisor_like_mount() -> None:
     assert "exec --user 65532:65532" in text
 
 
+def test_app_smoke_accepts_provider_degraded_readiness_but_requires_active_profile() -> None:
+    text = HARNESS.read_text(encoding="utf-8")
+
+    assert 'wait_for_http /readyz 503' in text
+    assert "expected provider-degraded state" in text
+    assert 'status["status"] == "active"' in text
+    assert 'status["capability_count"] > 0' in text
+    assert 'payload.get("profile", payload)' in text
+
+
 def test_smoke_harness_cleans_rootless_volume_and_fails_if_it_cannot() -> None:
     text = HARNESS.read_text(encoding="utf-8")
     assert 'podman unshare rm -r -- "$TMP_DIR"' in text

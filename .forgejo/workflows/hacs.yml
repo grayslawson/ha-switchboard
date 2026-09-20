@@ -35,8 +35,16 @@ jobs:
         run: |
           set -euo pipefail
           command -v podman
+          command -v python3
           podman --version
           podman info
+      - name: Export and validate public tree
+        run: |
+          set -euo pipefail
+          python3 tools/ha-switchboard-export-public.py "$RUNNER_TEMP/public"
+          python3 "$RUNNER_TEMP/public/tools/check_release_boundary.py" --root "$RUNNER_TEMP/public"
+          test ! -e "$RUNNER_TEMP/public/.forgejo"
+          test ! -e "$RUNNER_TEMP/public/.github"
       - name: Validate public integration with HACS
         env:
           GH_MIRROR_TOKEN: ${{ secrets.GH_MIRROR_TOKEN }}
@@ -44,5 +52,5 @@ jobs:
           set -euo pipefail
           test -n "$GH_MIRROR_TOKEN"
           export INPUT_GITHUB_TOKEN="$GH_MIRROR_TOKEN"
-          podman run --rm --env INPUT_GITHUB_TOKEN --env REPOSITORY=grayslawson/ha-switchboard --env CATEGORY=integration --env REPOSITORY_REF=master --env GITHUB_WORKSPACE=/github/workspace --volume "$PWD:/github/workspace:ro" ghcr.io/hacs/action@sha256:dc92fdad2f6ffbe74bffb7269d781ea8e064f52d9bb486cdf3925d74e7ab6ebf
+          podman run --rm --env INPUT_GITHUB_TOKEN --env REPOSITORY=grayslawson/ha-switchboard --env CATEGORY=integration --env REPOSITORY_REF=master --env GITHUB_WORKSPACE=/github/workspace --volume "$RUNNER_TEMP/public:/github/workspace:ro" ghcr.io/hacs/action@sha256:dc92fdad2f6ffbe74bffb7269d781ea8e064f52d9bb486cdf3925d74e7ab6ebf
           unset INPUT_GITHUB_TOKEN

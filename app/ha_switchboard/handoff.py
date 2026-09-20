@@ -18,7 +18,7 @@ from .redaction import (
     SensitiveDataError,
     sanitize_for_gateway,
 )
-from .route_policy import RouteRegistry, compatible_failovers
+from .route_policy import RouteRegistry, ordered_routes
 
 
 _LOG = logging.getLogger("ha_switchboard.handoff")
@@ -68,17 +68,22 @@ class HttpRouteAdapter:
         except ValueError as exc:
             _LOG.warning("event=provider_rejected provider=route reason=endpoint_policy")
             raise HandoffError("provider endpoint is not allowed") from exc
-        payload = {
-            "handoff_id": request.handoff_id,
-            "request_id": request.request_id,
-            "conversation_id": request.conversation_id,
-            "utterance": request.utterance,
-            "bounded_context": list(request.bounded_context),
-            "relevant_facts": list(request.relevant_facts),
-            "complexity": request.complexity.value,
-            "allowed_response_kinds": [item.value for item in request.allowed_response_kinds],
-            "handoff_depth": request.handoff_depth,
-        }
+        try:
+            payload = sanitize_for_gateway({
+                "contract": "ha-switchboard-fallback/v1",
+                "handoff_id": request.handoff_id,
+                "route_id": route.route_id,
+                "request_id": request.request_id,
+                "conversation_id": request.conversation_id,
+                "utterance": request.utterance,
+                "bounded_context": list(request.bounded_context),
+                "relevant_facts": list(request.relevant_facts),
+                "complexity": request.complexity.value,
+                "allowed_response_kinds": [item.value for item in request.allowed_response_kinds],
+                "handoff_depth": 1,
+            })
+        except SensitiveDataError as exc:
+            raise HandoffError("provider payload is not sanitized") from exc
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         if key:
             headers["Authorization"] = f"Bearer {key}"
@@ -103,13 +108,23 @@ class HttpRouteAdapter:
         return decoded
 
 
-def validate_response(payload: Mapping[str, Any], request: HandoffRequest) -> HandoffResponse:
+def validate_response(
+    payload: Mapping[str, Any],
+    request: HandoffRequest,
+    *,
+    expected_route_id: str | None = None,
+) -> HandoffResponse:
     """Accept only bounded prose or one typed capability proposal."""
 
     if not isinstance(payload, Mapping):
         raise HandoffInvalidResponse("downstream response is not an object")
     if payload.get("handoff_id") != request.handoff_id:
         raise HandoffInvalidResponse("handoff identifier mismatch")
+    route_id = expected_route_id or request.route_id
+    if payload.get("route_id", route_id) != route_id:
+        raise HandoffInvalidResponse("route identity mismatch")
+    if payload.get("handoff_depth", 1) != 1:
+        raise HandoffInvalidResponse("invalid handoff depth")
     if "service" in payload or "service_data" in payload or "tool_calls" in payload:
         raise HandoffInvalidResponse("raw provider tool calls are not accepted")
     kind = payload.get("kind")
@@ -136,13 +151,29 @@ def validate_response(payload: Mapping[str, Any], request: HandoffRequest) -> Ha
     proposal = proposals[0]
     if not isinstance(proposal, Mapping):
         raise HandoffInvalidResponse("proposal is not an object")
-    if set(proposal) - {"capability_id", "parameter_refs", "reason"}:
+    if set(proposal) - {"capability_id", "parameter_refs", "parameters", "reason"}:
         raise HandoffInvalidResponse("proposal contains unsupported fields")
     if not isinstance(proposal.get("capability_id"), str) or not proposal["capability_id"]:
         raise HandoffInvalidResponse("proposal must name an opaque capability")
     refs = proposal.get("parameter_refs", [])
     if not isinstance(refs, list) or len(refs) > 8 or any(not isinstance(item, Mapping) for item in refs):
         raise HandoffInvalidResponse("parameter references are invalid")
+    parameters = proposal.get("parameters", {})
+    if not isinstance(parameters, Mapping) or len(parameters) > 8:
+        raise HandoffInvalidResponse("typed parameters are invalid")
+    if any(not isinstance(key, str) or not key or len(key) > 64 for key in parameters):
+        raise HandoffInvalidResponse("typed parameter names are invalid")
+    if any(not isinstance(value, (str, int, float, bool)) and value is not None for value in parameters.values()):
+        raise HandoffInvalidResponse("typed parameter values are invalid")
+    candidate = next(
+        (item for item in request.relevant_facts if item.get("capability_id") == proposal["capability_id"]),
+        None,
+    )
+    if candidate is not None:
+        schema = candidate.get("parameter_schema", {})
+        allowed = set(schema.get("properties", {})) if isinstance(schema, Mapping) else set()
+        if set(parameters) - allowed:
+            raise HandoffInvalidResponse("parameters are outside the capability schema")
     return HandoffResponse(
         kind=response_kind,
         handoff_id=request.handoff_id,
@@ -161,16 +192,32 @@ class HandoffBroker:
         route = self.registry.get(request.route_id)
         if route is None:
             raise HandoffError("unknown route")
-        attempts = [route, *compatible_failovers(self.registry, route, _privacy_from_request(request))]
+        attempts = ordered_routes(
+            self.registry,
+            route,
+            complexity=request.complexity,
+            privacy_mode=_privacy_from_request(request),
+            required_response=request.allowed_response_kinds,
+            max_latency_ms=120_000,
+            max_cost=float("inf"),
+        )
         last_error: Exception | None = None
-        for attempt in attempts[:3]:
+        for attempt in attempts[:8]:
             try:
                 payload = self.adapter.invoke(attempt, request)
-                return validate_response(payload, request)
-            except HandoffInvalidResponse:
-                raise
-            except HandoffError as exc:
+                response = validate_response(payload, request, expected_route_id=attempt.route_id)
+                self.registry.record_success(attempt.route_id)
+                return response
+            except HandoffInvalidResponse as exc:
+                # A malformed provider response is provider health failure,
+                # not a caller error. Continue through the explicit chain.
+                self.registry.record_failure(attempt.route_id)
                 last_error = exc
+            except HandoffError as exc:
+                self.registry.record_failure(attempt.route_id)
+                last_error = exc
+        if isinstance(last_error, HandoffInvalidResponse):
+            raise last_error
         raise HandoffError("all compatible handoff routes failed") from last_error
 
 

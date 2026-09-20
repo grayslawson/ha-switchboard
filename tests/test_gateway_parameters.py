@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+import math
+
+import pytest
 
 from ha_switchboard.gateway import Gateway
 from ha_switchboard.jev_client import StaticJevClient
 from ha_switchboard.profile import ProfileCompiler
-from ha_switchboard.protocol import Complexity, JevDecision, RouteKind
+from ha_switchboard.protocol import Complexity, JevDecision, RouteKind, normalize_typed_parameters, parameter_questions
 from ha_switchboard.store import ProfileStore
 
 
@@ -74,3 +77,63 @@ def test_gateway_rejects_missing_required_parameter(tmp_path: Path, sanitized_di
 
     assert result.response_key == "invalid_parameters"
     assert result.kind.value == "refuse"
+
+
+def _parameterized_capability() -> dict[str, object]:
+    return {
+        "capability_id": "climate-mode",
+        "parameter_schema": {
+            "required": ["mode", "temperature"],
+            "properties": {
+                "mode": {"type": "string", "enum": ["heat", "cool", "off"]},
+                "temperature": {"type": "number", "minimum": 5, "maximum": 35},
+            },
+        },
+    }
+
+
+def test_typed_parameter_questions_are_bounded_and_schema_derived() -> None:
+    questions = parameter_questions([_parameterized_capability()])
+
+    assert questions == [
+        {"name": "mode", "kind": "string", "capability_id": "climate-mode", "required": True, "options": ["heat", "cool", "off"]},
+        {"name": "temperature", "kind": "number", "capability_id": "climate-mode", "required": True, "range": [5, 35]},
+    ]
+
+
+@pytest.mark.parametrize(
+    ("parameters", "message"),
+    [
+        ({"temperature": 20}, "required parameter is missing"),
+        ({"mode": "dry", "temperature": 20}, "not an allowed value"),
+        ({"mode": "heat", "temperature": 36}, "outside its range"),
+        ({"mode": "heat", "temperature": "20"}, "must be numeric"),
+        ({"mode": "heat", "temperature": math.inf}, "not finite"),
+        ({"mode": "heat", "temperature": 20, "unexpected": 1}, "outside the advertised schema"),
+    ],
+)
+def test_typed_parameter_answers_reject_invalid_missing_overflow_and_enum_values(
+    parameters: dict[str, object], message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        normalize_typed_parameters(parameters, _parameterized_capability())
+
+
+def test_typed_parameter_answers_normalize_safe_values() -> None:
+    assert normalize_typed_parameters(
+        {"mode": "heat", "temperature": 21}, _parameterized_capability()
+    ) == {"mode": "heat", "temperature": 21.0}
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        {"required": ["missing"], "properties": {}},
+        {"required": ["mode", "mode"], "properties": {"mode": {"type": "string"}}},
+        {"required": [], "properties": {"temperature": {"type": "number", "minimum": 35, "maximum": 5}}},
+        {"required": [], "properties": {"mode": {"type": "string", "enum": ["heat", "heat"]}}},
+    ],
+)
+def test_conflicting_parameter_schema_is_rejected(schema: dict[str, object]) -> None:
+    with pytest.raises(ValueError, match="parameter schema"):
+        normalize_typed_parameters({}, {"parameter_schema": schema})

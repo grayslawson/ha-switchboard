@@ -36,7 +36,15 @@ jobs:
         run: |
           set -euo pipefail
           command -v podman
+          command -v python3
           podman --version
           podman info
+      - name: Export and validate public tree
+        run: |
+          set -euo pipefail
+          python3 tools/ha-switchboard-export-public.py "$RUNNER_TEMP/public"
+          python3 "$RUNNER_TEMP/public/tools/check_release_boundary.py" --root "$RUNNER_TEMP/public"
+          test ! -e "$RUNNER_TEMP/public/.forgejo"
+          test ! -e "$RUNNER_TEMP/public/.github"
       - name: Validate Home Assistant metadata
-        run: podman run --rm --workdir /github/workspace --volume "$PWD:/github/workspace:ro" ghcr.io/home-assistant/hassfest@sha256:66b55a8ce14cdcf0c200dd4dab1f3228ac8d3f6e0404ec710a0d8a79b296eba4
+        run: podman run --rm --workdir /github/workspace --volume "$RUNNER_TEMP/public:/github/workspace:ro" ghcr.io/home-assistant/hassfest@sha256:66b55a8ce14cdcf0c200dd4dab1f3228ac8d3f6e0404ec710a0d8a79b296eba4

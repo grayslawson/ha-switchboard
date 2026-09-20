@@ -35,6 +35,14 @@ def test_core_integration_binds_empty_config_schema_to_domain() -> None:
     )
 
 
+def test_python_distribution_scopes_only_the_gateway_package() -> None:
+    project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert '[tool.setuptools.packages.find]' in project
+    assert 'where = ["app"]' in project
+    assert 'include = ["ha_switchboard*"]' in project
+
+
 def test_app_manifest_declares_portable_least_privilege_defaults() -> None:
     manifest = (ROOT / "app" / "config.yaml").read_text(encoding="utf-8")
     assert 'slug: "ha_switchboard"' in manifest
@@ -74,6 +82,8 @@ def test_app_entrypoint_is_executable_under_custom_apparmor_profile() -> None:
         "/usr/local/lib/** mr",
     ):
         assert rule in apparmor
+    assert "/app/** r," in apparmor
+    assert "/app/** rix," not in apparmor
 
 
 def test_devcontainer_is_development_only() -> None:
@@ -96,3 +106,6 @@ def test_standalone_path_has_explicit_persistence_and_healthcheck() -> None:
     assert 'FALLBACK_PROVIDER: "${FALLBACK_PROVIDER:-disabled}"' in compose
     assert "FALLBACK_ENDPOINT" in compose
     assert "FALLBACK_API_KEY" in compose
+    assert '"127.0.0.1:${HA_SWITCHBOARD_PORT:-8099}:8099"' in compose
+    assert "read_only: true" in compose
+    assert "/tmp:rw,noexec,nosuid,nodev" in compose

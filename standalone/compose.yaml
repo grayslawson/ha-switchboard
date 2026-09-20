@@ -5,15 +5,24 @@ services:
     image: ghcr.io/grayslawson/ha-switchboard:${HA_SWITCHBOARD_VERSION:-dev}
     restart: unless-stopped
     ports:
-      - "${HA_SWITCHBOARD_PORT:-8099}:8099"
+      # The gateway API carries a bearer token and should not be internet- or
+      # LAN-facing by default. Publish explicitly on loopback for local use;
+      # operators who need remote access must choose that boundary knowingly.
+      - "127.0.0.1:${HA_SWITCHBOARD_PORT:-8099}:8099"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev
     volumes:
       - "${HA_SWITCHBOARD_DATA:-./data}:/data"
     environment:
+      JEV_PROVIDER: "${JEV_PROVIDER:-disabled}"
       JEV_ENDPOINT: "${JEV_ENDPOINT:-}"
+      JEV_BASE_URL: "${JEV_BASE_URL:-}"
       JEV_API_KEY: "${JEV_API_KEY:-}"
       JEV_MODEL: "${JEV_MODEL:-typesafe/jev-1.13}"
       PRIVACY_MODE: "${PRIVACY_MODE:-local_only}"
       FALLBACK_PROVIDER: "${FALLBACK_PROVIDER:-disabled}"
+      FALLBACK_BASE_URL: "${FALLBACK_BASE_URL:-}"
       FALLBACK_ENDPOINT: "${FALLBACK_ENDPOINT:-}"
       FALLBACK_MODEL: "${FALLBACK_MODEL:-}"
       FALLBACK_API_KEY: "${FALLBACK_API_KEY:-}"

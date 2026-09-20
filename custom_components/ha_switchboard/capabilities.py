@@ -27,6 +27,15 @@ _TEMPERATURE = {
     "required": ["temperature"],
     "properties": {"temperature": {"type": "number", "minimum": 5, "maximum": 35}},
 }
+_HVAC_MODE = {
+    "required": ["hvac_mode"],
+    "properties": {
+        "hvac_mode": {
+            "type": "string",
+            "enum": ("off", "heat", "cool", "heat_cool", "auto", "dry", "fan_only"),
+        }
+    },
+}
 
 
 OPERATION_SPECS: dict[tuple[str, str], OperationSpec] = {
@@ -48,7 +57,7 @@ OPERATION_SPECS: dict[tuple[str, str], OperationSpec] = {
     ("media_player", "set_volume"): OperationSpec("media_player", "volume_set", _VOLUME),
     ("climate", "set_temperature"): OperationSpec("climate", "set_temperature", _TEMPERATURE),
     ("climate", "set_hvac_mode"): OperationSpec(
-        "climate", "set_hvac_mode", {"required": ["hvac_mode"], "properties": {"hvac_mode": {"type": "string"}}}
+        "climate", "set_hvac_mode", _HVAC_MODE
     ),
     ("lock", "lock"): OperationSpec("lock", "lock", _EMPTY, "confirm"),
     ("lock", "unlock"): OperationSpec("lock", "unlock", _EMPTY, "confirm"),
@@ -56,8 +65,6 @@ OPERATION_SPECS: dict[tuple[str, str], OperationSpec] = {
     ("cover", "close_cover"): OperationSpec("cover", "close_cover", _EMPTY, "confirm"),
     ("garage", "open_cover"): OperationSpec("cover", "open_cover", _EMPTY, "confirm"),
     ("garage", "close_cover"): OperationSpec("cover", "close_cover", _EMPTY, "confirm"),
-    ("script", "activate"): OperationSpec("script", "turn_on", _EMPTY),
-    ("scene", "activate"): OperationSpec("scene", "turn_on", _EMPTY),
 }
 
 
@@ -69,6 +76,7 @@ class CapabilityTarget:
     domain: str
     operation: str
     spec: OperationSpec
+    display_name: str = ""
 
     @property
     def risk_class(self) -> str:
@@ -123,3 +131,45 @@ def operation_spec(domain: str, operation: str) -> OperationSpec | None:
 
 def operations_for_domain(domain: str) -> tuple[str, ...]:
     return tuple(operation for candidate_domain, operation in OPERATION_SPECS if candidate_domain == domain)
+
+
+def resolve_batch_targets(
+    targets: tuple[CapabilityTarget, ...] | list[CapabilityTarget],
+    *,
+    area: str | None = None,
+    label: str | None = None,
+    group: str | None = None,
+    operation: str | None = None,
+    max_targets: int = 32,
+) -> tuple[CapabilityTarget, ...]:
+    """Resolve a bounded Core target set from sanitized target metadata.
+
+    ``display_name`` is the only user-facing metadata used here.  Callers may
+    pass a sanitized profile row through ``CapabilityTarget`` construction;
+    no entity ID or registry ID is needed to select a batch.
+    """
+    if not 1 <= max_targets <= 32:
+        raise ValueError("batch bound must be between 1 and 32")
+    wanted_area = area.casefold().strip() if isinstance(area, str) else None
+    wanted_label = label.casefold().strip() if isinstance(label, str) else None
+    wanted_group = group.casefold().strip() if isinstance(group, str) else None
+    selected: list[CapabilityTarget] = []
+    for target in targets:
+        if operation and target.operation != operation:
+            continue
+        name = target.display_name.casefold()
+        # Profile adapters can encode safe area/label/group phrases in the
+        # display name; this is intentionally conservative and exact enough
+        # for the Core-local resolver.
+        if wanted_area and wanted_area not in name:
+            continue
+        if wanted_label and wanted_label not in name:
+            continue
+        if wanted_group and wanted_group not in name:
+            continue
+        selected.append(target)
+    if len(selected) > max_targets:
+        raise ValueError("batch_too_large")
+    if len({item.entity_id for item in selected}) != len(selected):
+        raise ValueError("batch_scope_ambiguous")
+    return tuple(selected)

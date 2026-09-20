@@ -46,3 +46,23 @@ def test_newer_event_cannot_be_overwritten_by_an_older_candidate(sanitized_disco
     result = monitor.reconcile(sanitized_discovery, revision="profile-old")
     assert result.revision == "profile-one"
     assert "source_changed_during_reconcile" in monitor.pending_reasons
+
+
+def test_every_profile_invalidation_event_marks_the_expected_sections() -> None:
+    expected = {
+        "entity_registry_updated": {SectionId.ENTITIES, SectionId.EXPOSURE, SectionId.SERVICES},
+        "device_registry_updated": {SectionId.DEVICES, SectionId.ORGANIZATION},
+        "area_registry_updated": {SectionId.ORGANIZATION, SectionId.ENTITIES},
+        "floor_registry_updated": {SectionId.ORGANIZATION, SectionId.ENTITIES},
+        "label_registry_updated": {SectionId.ORGANIZATION, SectionId.ENTITIES},
+        "exposure_updated": {SectionId.EXPOSURE, SectionId.ENTITIES, SectionId.ROUTINES},
+        "service_schema_updated": {SectionId.SERVICES, SectionId.ENTITIES, SectionId.ROUTINES},
+        "assist_surface_updated": {SectionId.ASSIST_SURFACES},
+        "routine_updated": {SectionId.ROUTINES},
+        "reconnect": set(SectionId),
+        "restart": set(SectionId),
+    }
+    for event_type, sections in expected.items():
+        monitor = ChangeMonitor()
+        assert monitor.ingest({"event_type": event_type}) == sections
+        assert set(monitor.status()["pending_sections"]) == {section.value for section in sections}

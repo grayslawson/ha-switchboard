@@ -8,6 +8,12 @@ on:
       - "v*"
     paths:
       - "app/**"
+      - "custom_components/**"
+      - "standalone/**"
+      - "pyproject.toml"
+      - "hacs.json"
+      - "repository.yaml"
+      - "docs/RELEASE.md"
       - ".forgejo/workflows/build-app.yml"
   workflow_dispatch:
 
@@ -74,7 +80,12 @@ jobs:
           }
           if len(set(values.values())) != 1:
               raise SystemExit("release source version mismatch: " + ", ".join(f"{path}={value}" for path, value in values.items()))
-          print(f"release source version consistent: {next(iter(values.values()))}")
+          version = next(iter(values.values()))
+          changelog = (root / "app/CHANGELOG.md").read_text(encoding="utf-8")
+          marker = f"## {version} — source release candidate (not published)"
+          if marker not in changelog:
+              raise SystemExit(f"app/CHANGELOG.md is missing release marker: {marker}")
+          print(f"release source version consistent: {version}; app/CHANGELOG.md is authoritative")
           PY
 
       - name: Verify builder prerequisites

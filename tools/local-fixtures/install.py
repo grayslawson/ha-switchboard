@@ -8,6 +8,7 @@ from pathlib import Path
 
 
 CONTAINER = "busy_cohen"
+LOCAL_PORT = "7123"
 DESTINATION = "/mnt/supervisor/homeassistant/switchboard_fixture.yaml"
 MARKER = "# HA Switchboard local fixture package"
 INCLUDE = (
@@ -25,13 +26,23 @@ def run(*arguments: str) -> str:
     return result.stdout
 
 
+def validate_local_container(details: dict) -> None:
+    """Fail closed unless Docker describes the disposable local Core fixture."""
+    if details.get("Name") != f"/{CONTAINER}" or not details.get("State", {}).get("Running"):
+        raise SystemExit("Refusing fixture install: busy_cohen is not the running local container")
+    ports = details.get("NetworkSettings", {}).get("Ports", {})
+    published = {
+        entry.get("HostPort")
+        for entry in ports.get("80/tcp") or []
+        if isinstance(entry, dict)
+    }
+    if LOCAL_PORT not in published:
+        raise SystemExit("Refusing fixture install outside localhost:7123")
+
+
 def main() -> None:
     details = json.loads(run("docker", "inspect", CONTAINER))[0]
-    if details["Name"] != f"/{CONTAINER}" or not details["State"]["Running"]:
-        raise SystemExit("The named local devcontainer is not running")
-    ports = details["NetworkSettings"]["Ports"]
-    if not any(entry.get("HostPort") == "7123" for entry in ports.get("80/tcp") or []):
-        raise SystemExit("Refusing to install outside the localhost:7123 devcontainer")
+    validate_local_container(details)
 
     fixture = Path(__file__).with_name("switchboard.yaml")
     run("docker", "cp", str(fixture), f"{CONTAINER}:{DESTINATION}")

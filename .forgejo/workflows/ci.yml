@@ -71,6 +71,10 @@ jobs:
           set -euo pipefail
           python3 tools/ha-switchboard-export-public.py "$RUNNER_TEMP/public"
           python3 "$RUNNER_TEMP/public/tools/check_release_boundary.py" --root "$RUNNER_TEMP/public"
+          test -f "$RUNNER_TEMP/public/app/config.yaml"
+          test -f "$RUNNER_TEMP/public/custom_components/ha_switchboard/manifest.json"
+          test ! -e "$RUNNER_TEMP/public/.forgejo"
+          test ! -e "$RUNNER_TEMP/public/.github"
 
   app-smoke-amd64:
     # The smoke build executes the submitted Dockerfile and Python code. Do not

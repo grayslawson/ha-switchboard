@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from ha_switchboard.profile import ProfileCompiler, profile_fingerprint
 from ha_switchboard.protocol import LifecycleStatus
+import pytest
 
 
 def test_compiler_builds_opaque_capabilities(discovery: dict) -> None:
@@ -26,3 +27,11 @@ def test_duplicate_aliases_remain_distinct(discovery: dict) -> None:
     lights = [item for item in profile.capabilities if item.domain == "light" and item.operation == "turn_on"]
     assert len(lights) == 2
     assert len({item.capability_id for item in lights}) == 2
+
+
+def test_malformed_and_oversized_snapshots_fail_closed() -> None:
+    compiler = ProfileCompiler()
+    with pytest.raises(ValueError, match="entities must be a list"):
+        compiler.compile({"entities": {"not": "a list"}})
+    with pytest.raises(ValueError, match="entity count exceeds bound"):
+        compiler.compile({"entities": [{} for _ in range(2_001)]})

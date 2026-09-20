@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from pathlib import Path
 
 from custom_components.ha_switchboard.read_only import read_only_answer
 
@@ -74,3 +75,27 @@ def test_unexposed_and_unknown_entity_are_not_answered():
     hass = SimpleNamespace(states=States({"light.kitchen": SimpleNamespace(state="on", attributes={})}))
     hidden = row("Kitchen light", "r1"); hidden["exposed"] = False
     assert read_only_answer(hass, "Is the kitchen light on?", profile(hidden), Targets([Target("r1", "light.kitchen")])) is None
+
+
+def test_unavailable_state_is_reported_without_falling_back_to_a_write():
+    hass = SimpleNamespace(states=States({"light.kitchen": SimpleNamespace(state="unavailable", attributes={})}))
+    result = read_only_answer(
+        hass,
+        "What is the kitchen light status?",
+        profile(row("Kitchen light", "r1")),
+        Targets([Target("r1", "light.kitchen")]),
+    )
+    assert result == "Kitchen light is unavailable."
+
+
+def test_read_only_language_does_not_intercept_mutating_or_imperative_phrases():
+    hass = SimpleNamespace(states=States({"light.kitchen": SimpleNamespace(state="on", attributes={})}))
+    for utterance in ("Turn the kitchen light on", "Open the kitchen light", "Toggle the kitchen light"):
+        assert read_only_answer(
+            hass, utterance, profile(row("Kitchen light", "r1")), Targets([Target("r1", "light.kitchen")])
+        ) is None
+
+
+def test_conversation_source_does_not_contain_the_prohibited_generic_refusal():
+    source = (Path(__file__).parents[1] / "custom_components/ha_switchboard/conversation.py").read_text(encoding="utf-8")
+    assert "I could not safely complete that request." not in source

@@ -74,6 +74,7 @@ def test_openrouter_request_and_parameter_free_decision(monkeypatch) -> None:
     assert observed["body"]["model"] == "typesafe/jev-1.13"
     assert set(observed["body"]) == {"model", "state", "questions"}
     assert observed["body"]["questions"]["route"]["type"] == "choice"
+    assert "parameters" not in observed["body"]["questions"]
     assert observed["body"]["questions"]["capability"]["criteria"]["cap-light-on"]["name"] == "Study light: turn on"
     assert observed["auth_present"] is True
     assert decision.route is RouteKind.ROUTINE_CONTROL
@@ -104,6 +105,19 @@ def test_openrouter_unknown_candidate_and_parameterized_action_fail_closed(monke
 
     body = _response("known")
     candidate["parameter_schema"] = {"required": ["temperature"]}
+    assert client.decide(_request(candidate)).route is RouteKind.CLARIFY
+
+    body = _response("known")
+    candidate["parameter_schema"] = {"properties": {"temperature": {"type": "number"}}}
+    # Native Decisions has no typed value answer in this contract.  Optional
+    # parameters must not turn an absent value into an executable action.
+    assert client.decide(_request(candidate)).route is RouteKind.CLARIFY
+
+    # An unrecognized answer field is not treated as a native typed-value
+    # contract; the parameterized capability remains non-executable.
+    body = _response("known")
+    body["answers"]["parameters"] = {"temperature": 21}
+    monkeypatch.setattr("ha_switchboard.jev_client.urllib.request.urlopen", lambda *_args, **_kwargs: Response(body))
     assert client.decide(_request(candidate)).route is RouteKind.CLARIFY
 
 

@@ -11,3 +11,4 @@ class SwitchboardRuntimeData:
     client: Any
     coordinator: Any
     executor: Any
+    diagnostics: Any = None

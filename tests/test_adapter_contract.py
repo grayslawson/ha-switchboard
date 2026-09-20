@@ -10,6 +10,7 @@ from custom_components.ha_switchboard.conversation import (
     async_setup_entry,
 )
 from custom_components.ha_switchboard.execution import ExecutionBoundary
+from custom_components.ha_switchboard.capabilities import CapabilityMap, CapabilityTarget, operation_spec
 
 
 class FakeClient:
@@ -90,3 +91,14 @@ def test_gateway_helper_without_core_context_accepts_existing_boundary_double() 
 def test_gateway_client_does_not_put_home_assistant_token_in_payload() -> None:
     client = GatewayClient("http://ha-switchboard:8099", "gateway-secret")
     assert client.gateway_token == "gateway-secret"
+
+
+def test_capability_map_replacement_is_atomic_from_the_reader_perspective() -> None:
+    first = CapabilityTarget("first", "ref-first", "light.first", "light", "turn_on", operation_spec("light", "turn_on"))
+    second = CapabilityTarget("second", "ref-second", "light.second", "light", "turn_off", operation_spec("light", "turn_off"))
+    mapping = CapabilityMap()
+    mapping.replace("revision-one", {first.capability_id: first})
+    mapping.replace("revision-two", {second.capability_id: second})
+    assert mapping.revision == "revision-two"
+    assert mapping.get("first") is None
+    assert mapping.get("second") is second

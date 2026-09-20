@@ -58,6 +58,11 @@ class GatewayClient:
     async def invalidate(self, event_type: str) -> Mapping[str, Any]:
         return await self._request("POST", "/v1/profile/invalidate", {"event_type": event_type})
 
+    async def scan(self) -> Mapping[str, Any]:
+        """Request one authenticated, bounded profile scan from the App."""
+
+        return await self._request("POST", "/v1/profile/scan", {"kind": "manual_reconcile"})
+
     async def process(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
         return await self._request("POST", "/v1/assist/process", payload)
 

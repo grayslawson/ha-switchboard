@@ -32,7 +32,17 @@ profile ha_switchboard flags=(attach_disconnected,mediate_deleted) {
   /usr/lib/** mr,
   /usr/local/lib/ r,
   /usr/local/lib/** mr,
-  /app/** rix,
+  # Application source and data are imported/read by the already-authorized
+  # Python interpreter; they are not executable entrypoints.  Keeping this
+  # read-only avoids turning a writable application path into an AppArmor
+  # execution transition.
+  /app/ r,
+  /app/** r,
+  # Python's extension modules are loaded from the immutable image layer;
+  # allow executable memory mappings without granting write or path execute
+  # permission to application data.
+  /usr/local/lib/python3.12/ r,
+  /usr/local/lib/python3.12/** mr,
   /data/ rw,
   /data/** rwk,
   /etc/** r,

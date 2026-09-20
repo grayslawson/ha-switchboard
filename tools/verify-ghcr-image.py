@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify a published GHCR image's manifest, platforms, and source label."""
+"""Verify GHCR image provenance, or a supplied read-only provenance record."""
 
 from __future__ import annotations
 
@@ -7,8 +7,10 @@ import argparse
 import base64
 import json
 import os
+import re
 import urllib.parse
 import urllib.request
+from pathlib import Path
 from typing import Any
 
 
@@ -18,26 +20,167 @@ MANIFEST_ACCEPT = (
     "application/vnd.oci.image.manifest.v1+json,"
     "application/vnd.docker.distribution.manifest.v2+json"
 )
+SHA256_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
+
+
+def _required_text(value: Any, field: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field} is required")
+    return value
+
+
+def _required_digest(value: Any, field: str) -> str:
+    digest = _required_text(value, field)
+    if not SHA256_DIGEST.fullmatch(digest):
+        raise ValueError(f"{field} must be an immutable sha256 digest")
+    return digest
+
+
+def _required_architectures(value: Any, field: str = "architecture set") -> set[str]:
+    if not isinstance(value, list) or not value or not all(isinstance(item, str) for item in value):
+        raise ValueError(f"{field} is required")
+    architectures = set(value)
+    if len(architectures) != len(value):
+        raise ValueError(f"{field} contains duplicates")
+    return architectures
+
+
+def _verify_image_facts(
+    *,
+    expected_architectures: set[str],
+    source_url: str,
+    revision: str,
+    image_digest: Any,
+    platforms: dict[str, dict[str, Any]],
+    release_metadata: dict[str, Any] | None = None,
+    image_tag: str | None = None,
+) -> str:
+    if not expected_architectures:
+        raise ValueError("at least one architecture is required")
+    if not all(
+        isinstance(architecture, str) and architecture
+        for architecture in expected_architectures
+    ):
+        raise ValueError("architecture set contains an invalid architecture")
+    source_url = _required_text(source_url, "source URL")
+    revision = _required_text(revision, "source revision")
+    digest = _required_digest(image_digest, "published image digest")
+
+    actual_architectures = set(platforms)
+    if actual_architectures != expected_architectures:
+        missing = sorted(expected_architectures - actual_architectures)
+        unexpected = sorted(actual_architectures - expected_architectures)
+        raise ValueError(
+            "published architecture set does not match expected set"
+            f" (missing={missing}, unexpected={unexpected})"
+        )
+
+    for architecture in sorted(expected_architectures):
+        details = platforms.get(architecture)
+        if not isinstance(details, dict):
+            raise ValueError(f"linux/{architecture} image metadata is invalid")
+        _required_digest(details.get("digest"), f"linux/{architecture} manifest digest")
+        if details.get("source") != source_url:
+            raise ValueError(f"linux/{architecture} image has an unexpected source label")
+        if details.get("revision") != revision:
+            raise ValueError(f"linux/{architecture} image does not match source revision")
+
+    if release_metadata is not None:
+        if not isinstance(release_metadata, dict):
+            raise ValueError("public release metadata must be an object")
+        if image_tag is None:
+            raise ValueError("image tag is required for public release metadata")
+        release_repository = _required_text(
+            release_metadata.get("repository"), "public release repository"
+        )
+        if release_repository != source_url:
+            raise ValueError("public release repository does not match source URL")
+        release_tag = _required_text(release_metadata.get("tag"), "public release tag")
+        expected_release_tag = f"v{image_tag.removeprefix('v')}"
+        if release_tag != expected_release_tag:
+            raise ValueError("public release tag does not match image tag")
+        if release_metadata.get("target_revision") != revision:
+            raise ValueError("public release target revision does not match source revision")
+        if release_metadata.get("image_revision") != revision:
+            raise ValueError("public release image revision does not match source revision")
+        if (
+            _required_digest(release_metadata.get("image_digest"), "public release image digest")
+            != digest
+        ):
+            raise ValueError("public release image digest does not match image digest")
+        if _required_architectures(
+            release_metadata.get("architectures"), "public release architecture set"
+        ) != expected_architectures:
+            raise ValueError(
+                "public release architecture set does not match image architecture set"
+            )
+        if release_metadata.get("draft") is not False:
+            raise ValueError("public release must not be a draft")
+        if release_metadata.get("prerelease") is not False:
+            raise ValueError("public release must not be a prerelease")
+        if release_metadata.get("published") is not True:
+            raise ValueError("public release must be published")
+
+    return digest
+
+
+def verify_provenance_record(record: Any) -> tuple[str, set[str]]:
+    """Validate a sanitized, already-collected release record without I/O."""
+
+    if not isinstance(record, dict):
+        raise ValueError("provenance record must be an object")
+    candidate_revision = _required_text(
+        record.get("candidate_revision"), "candidate source revision"
+    )
+    source_url = _required_text(record.get("source_url"), "candidate source URL")
+    expected_architectures = _required_architectures(record.get("expected_architectures"))
+    image = record.get("image")
+    if not isinstance(image, dict):
+        raise ValueError("image metadata is required")
+    if "public_release" not in record:
+        raise ValueError("public release metadata is required")
+    image_tag = _required_text(image.get("tag"), "image tag")
+    image_digest = _required_digest(image.get("digest"), "published image digest")
+    raw_platforms = image.get("platforms")
+    if not isinstance(raw_platforms, dict):
+        raise ValueError("image platform metadata is required")
+    platforms: dict[str, dict[str, Any]] = {}
+    for architecture, details in raw_platforms.items():
+        if not isinstance(architecture, str) or not isinstance(details, dict):
+            raise ValueError("image platform metadata is invalid")
+        platforms[architecture] = details
+    _verify_image_facts(
+        expected_architectures=expected_architectures,
+        source_url=source_url,
+        revision=candidate_revision,
+        image_digest=image_digest,
+        platforms=platforms,
+        release_metadata=record["public_release"],
+        image_tag=image_tag,
+    )
+    return image_digest, expected_architectures
 
 
 class Registry:
-    def __init__(self, image: str, username: str, password: str) -> None:
+    def __init__(self, image: str, username: str = "", password: str = "") -> None:
         registry, separator, repository = image.partition("/")
         if not separator or "." not in registry:
             raise ValueError("image must include a registry host")
         self.registry = registry
         self.repository = repository
-        credentials = base64.b64encode(f"{username}:{password}".encode()).decode()
+        if bool(username) != bool(password):
+            raise ValueError("registry username and token must be provided together")
+        headers: dict[str, str] = {}
+        if username and password:
+            credentials = base64.b64encode(f"{username}:{password}".encode()).decode()
+            headers["Authorization"] = f"Basic {credentials}"
         query = urllib.parse.urlencode(
             {
                 "service": registry,
                 "scope": f"repository:{repository}:pull",
             }
         )
-        request = urllib.request.Request(
-            f"https://{registry}/token?{query}",
-            headers={"Authorization": f"Basic {credentials}"},
-        )
+        request = urllib.request.Request(f"https://{registry}/token?{query}", headers=headers)
         with urllib.request.urlopen(request, timeout=30) as response:
             payload = json.load(response)
         token = payload.get("token") or payload.get("access_token")
@@ -56,7 +199,15 @@ class Registry:
             raise ValueError(f"registry response was not an object: {path}")
         return payload, response.headers.get("Docker-Content-Digest")
 
-    def verify(self, tag: str, expected_architectures: set[str], source_url: str, revision: str = "") -> str:
+    def verify(
+        self, tag: str, expected_architectures: set[str], source_url: str, revision: str = ""
+    ) -> str:
+        if not expected_architectures:
+            raise ValueError("at least one architecture is required")
+        if not source_url:
+            raise ValueError("source URL is required")
+        if not revision:
+            raise ValueError("source revision is required")
         prefix = f"/v2/{self.repository}"
         index, index_digest = self.json(
             f"{prefix}/manifests/{urllib.parse.quote(tag, safe='')}", MANIFEST_ACCEPT
@@ -65,7 +216,7 @@ class Registry:
         if not isinstance(manifests, list):
             raise ValueError("published image is not a multi-architecture manifest")
 
-        found: set[str] = set()
+        platforms: dict[str, dict[str, Any]] = {}
         for descriptor in manifests:
             if not isinstance(descriptor, dict):
                 continue
@@ -74,52 +225,84 @@ class Registry:
                 continue
             architecture = platform.get("architecture")
             digest = descriptor.get("digest")
-            if not isinstance(architecture, str) or not isinstance(digest, str):
-                continue
-            if architecture not in expected_architectures:
-                continue
-            if architecture in found:
+            if not isinstance(architecture, str) or not architecture:
+                raise ValueError("linux manifest has no architecture")
+            if architecture in platforms:
                 raise ValueError(f"duplicate linux/{architecture} manifest")
-            found.add(architecture)
-            child, _ = self.json(f"{prefix}/manifests/{digest}", MANIFEST_ACCEPT)
+            manifest_digest = _required_digest(digest, f"linux/{architecture} manifest digest")
+            child, child_digest = self.json(
+                f"{prefix}/manifests/{manifest_digest}", MANIFEST_ACCEPT
+            )
+            if child_digest is not None and child_digest != manifest_digest:
+                raise ValueError(f"linux/{architecture} manifest digest does not match descriptor")
             config_descriptor = child.get("config")
             if not isinstance(config_descriptor, dict) or not isinstance(
                 config_descriptor.get("digest"), str
             ):
                 raise ValueError(f"linux/{architecture} manifest has no config")
+            config_digest = _required_digest(
+                config_descriptor["digest"], f"linux/{architecture} config digest"
+            )
             config, _ = self.json(
-                f"{prefix}/blobs/{config_descriptor['digest']}", "application/json"
+                f"{prefix}/blobs/{config_digest}", "application/json"
             )
             labels = config.get("config", {}).get("Labels", {})
-            if not isinstance(labels, dict) or labels.get("org.opencontainers.image.source") != source_url:
-                raise ValueError(f"linux/{architecture} image has an unexpected source label")
-            if revision and labels.get("org.opencontainers.image.revision") != revision:
-                raise ValueError(f"linux/{architecture} image does not match source revision")
+            if not isinstance(labels, dict):
+                raise ValueError(f"linux/{architecture} image has no OCI labels")
+            platforms[architecture] = {
+                "digest": manifest_digest,
+                "source": labels.get("org.opencontainers.image.source"),
+                "revision": labels.get("org.opencontainers.image.revision"),
+            }
 
-        missing = expected_architectures - found
-        if missing:
-            raise ValueError(f"published image is missing architectures: {sorted(missing)}")
-        digest = index_digest or "unknown"
-        print(f"GHCR {self.repository}:{tag}: PASS architectures={sorted(found)} digest={digest}")
+        digest = _verify_image_facts(
+            expected_architectures=expected_architectures,
+            source_url=source_url,
+            revision=revision,
+            image_digest=index_digest,
+            platforms=platforms,
+        )
+        print(
+            f"GHCR {self.repository}:{tag}: PASS architectures={sorted(platforms)} digest={digest}"
+        )
         return digest
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--image", required=True)
-    parser.add_argument("--tag", required=True)
-    parser.add_argument("--source-url", required=True)
-    parser.add_argument("--revision", default="")
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument(
+        "--provenance-file",
+        type=Path,
+        help="validate a sanitized local read-only provenance JSON record; no network access",
+    )
+    source.add_argument("--image", help="explicit read-only registry image reference")
+    parser.add_argument("--tag")
+    parser.add_argument("--source-url")
+    parser.add_argument("--revision")
     parser.add_argument("--username-env", default="GHCR_USERNAME")
     parser.add_argument("--token-env", default="GHCR_TOKEN")
-    parser.add_argument("--architecture", action="append", default=["amd64", "arm64"])
+    parser.add_argument("--architecture", action="append", dest="architectures")
     args = parser.parse_args()
+    if args.provenance_file is not None:
+        try:
+            with args.provenance_file.open(encoding="utf-8") as handle:
+                record = json.load(handle)
+        except OSError as error:
+            raise SystemExit(f"could not read provenance file: {error}") from error
+        except json.JSONDecodeError as error:
+            raise SystemExit(f"provenance file is not valid JSON: {error.msg}") from error
+        digest, architectures = verify_provenance_record(record)
+        print(f"offline provenance PASS architectures={sorted(architectures)} digest={digest}")
+        return 0
+
+    if not args.tag or not args.source_url or not args.revision:
+        parser.error("--image requires --tag, --source-url, and --revision")
     username = os.environ.get(args.username_env, "")
     token = os.environ.get(args.token_env, "")
-    if not username or not token:
-        raise SystemExit("registry username and token environment variables are required")
+    architectures = set(args.architectures or ("amd64", "arm64"))
     Registry(args.image, username, token).verify(
-        args.tag, set(args.architecture), args.source_url, args.revision
+        args.tag, architectures, args.source_url, args.revision
     )
     return 0
 

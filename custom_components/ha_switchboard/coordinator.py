@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from math import isfinite
 from typing import Any, Mapping
 
@@ -24,6 +24,16 @@ try:  # Home Assistant runs @callback listeners on its event-loop thread.
 except ImportError:  # Contract tests run without Home Assistant installed.
     def callback(func):
         return func
+
+
+try:  # Keep scan failure reporting bounded when Home Assistant is installed.
+    from homeassistant.exceptions import HomeAssistantError
+except ImportError:  # Contract tests run without Home Assistant installed.
+    class HomeAssistantError(Exception):
+        """Fallback marker for Home Assistant operation failures."""
+
+
+_SCAN_ERRORS = (GatewayClientError, HomeAssistantError, OSError, RuntimeError, TypeError, ValueError, KeyError)
 
 
 _STATE_ATTRIBUTES = frozenset(
@@ -55,6 +65,10 @@ def _bounded_refresh(value: Any) -> int:
     return max(MIN_PROFILE_REFRESH_MINUTES, min(MAX_PROFILE_REFRESH_MINUTES, value))
 
 
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 class ProfileCoordinator:
     """Build, invalidate, and atomically activate Core profile revisions."""
 
@@ -82,12 +96,23 @@ class ProfileCoordinator:
         self._refresh_task: asyncio.Task[Any] | None = None
         self._recovery_task: asyncio.Task[Any] | None = None
         self._flush_task: asyncio.Task[Any] | None = None
+        self._scan_task: asyncio.Task[Any] | None = None
+        self._scan_request_lock = asyncio.Lock()
         self._reconcile_lock = asyncio.Lock()
         self._pending_events: set[str] = set()
         self._profile_generation = 0
         self._started = False
         self._stale = True
         self.last_error: str | None = None
+        self._scan_state = "idle"
+        self._scan_generation: int | None = None
+        self._last_scan_result: str | None = None
+        self._last_scan_at: str | None = None
+        self._last_scan_error: str | None = None
+        self._scan_trigger: str | None = None
+        self._last_reconcile_at: str | None = None
+        self._reconcile_count = 0
+        self._app_generation: str | None = None
 
     async def async_start(self) -> None:
         if self._started:
@@ -103,11 +128,59 @@ class ProfileCoordinator:
     async def async_reconcile(self) -> dict[str, Any]:
         async with self._reconcile_lock:
             result: dict[str, Any] = {}
-            for _attempt in range(3):
-                result = await self._async_reconcile_unlocked()
-                if not self._stale:
-                    return result
-            raise GatewayClientError("profile changed during reconciliation")
+            try:
+                for _attempt in range(3):
+                    result = await self._async_reconcile_unlocked()
+                    if not self._stale:
+                        return result
+                raise GatewayClientError("profile changed during reconciliation")
+            except Exception as exc:
+                self.last_error = type(exc).__name__
+                self._scan_state = "failed"
+                self._last_scan_result = "failed"
+                raise
+
+    async def async_scan(self) -> dict[str, Any]:
+        """Run or join the single in-flight manual scan.
+
+        A second UI request joins the first task, so it cannot create parallel
+        replacement candidates or report a false success.
+        """
+
+        async with self._scan_request_lock:
+            if self._scan_task is not None and not self._scan_task.done():
+                task = self._scan_task
+            else:
+                task = self._create_task(self._run_scan())
+                self._scan_task = task
+        return await task
+
+    async def _run_scan(self) -> dict[str, Any]:
+        """Run exactly one manual scan, including its bounded outcome state."""
+
+        self._scan_state = "running"
+        self._scan_generation = self._profile_generation
+        self._scan_trigger = "manual"
+        self._last_scan_error = None
+        try:
+            request_scan = getattr(self.client, "scan", None)
+            if callable(request_scan):
+                await request_scan()
+            result = await self.async_reconcile()
+            self._scan_state = "completed"
+            self._last_scan_result = "completed"
+            self._last_scan_at = _utc_now()
+            return result
+        except _SCAN_ERRORS as exc:
+            self._scan_state = "failed"
+            self._last_scan_result = "failed"
+            self._last_scan_at = _utc_now()
+            self._last_scan_error = type(exc).__name__
+            raise
+        finally:
+            current = asyncio.current_task()
+            if self._scan_task is current:
+                self._scan_task = None
 
     async def _async_reconcile_unlocked(self) -> dict[str, Any]:
         """Scan Core and replace the gateway profile as one serialized update."""
@@ -115,11 +188,11 @@ class ProfileCoordinator:
         generation = self._profile_generation
         build = await self.adapter.async_build()
         result = await self.client.reconcile(build.snapshot)
-        revision = str(result.get("profile_revision") or "") if isinstance(result, dict) else ""
+        revision = str(result.get("profile_revision") or "") if isinstance(result, Mapping) else ""
         if not revision:
             status = await self.client.status()
             revision = str(status.get("profile_revision") or "")
-            result = status
+            result = dict(status)
         if not revision:
             raise GatewayClientError("gateway did not return a profile revision")
 
@@ -136,7 +209,13 @@ class ProfileCoordinator:
         self.profile_revision = revision
         self._refresh_state_cache()
         self._stale = False
+        self._scan_state = "completed"
+        self._last_scan_result = "completed"
+        self._last_reconcile_at = _utc_now()
+        self._reconcile_count += 1
         self.last_error = None
+        if isinstance(result, Mapping) and result.get("generation") is not None:
+            self._app_generation = str(result["generation"])
         return dict(result)
 
     async def async_handle_event(self, event_type: str) -> None:
@@ -218,6 +297,20 @@ class ProfileCoordinator:
             "last_error": self.last_error,
             "capability_count": len(self.capability_map),
             "refresh_minutes": self.refresh_minutes,
+            "scan_state": self._scan_state,
+            "last_scan_result": self._last_scan_result,
+            "last_scan_at": self._last_scan_at,
+            "last_scan_error": self._last_scan_error,
+            "scan_generation": self._scan_generation,
+            "scan_trigger": self._scan_trigger,
+            "last_reconcile_at": self._last_reconcile_at,
+            "reconcile_count": self._reconcile_count,
+            "warning_count": len(self._build.snapshot.get("warnings", ())) if self._build else 0,
+            "entity_count": len(self._build.snapshot.get("entities", ())) if self._build else 0,
+            "routine_count": len(self._build.snapshot.get("routines", ())) if self._build else 0,
+            "service_count": len(self._build.snapshot.get("services", ())) if self._build else 0,
+            "generation": self._profile_generation,
+            "app_generation": self._app_generation,
         }
 
     async def async_shutdown(self) -> None:
@@ -233,10 +326,10 @@ class ProfileCoordinator:
         if self._recovery_cancel:
             self._recovery_cancel()
             self._recovery_cancel = None
-        for task in (self._refresh_task, self._recovery_task, self._flush_task):
+        for task in (self._refresh_task, self._recovery_task, self._flush_task, self._scan_task):
             if task and not task.done():
                 task.cancel()
-        self._refresh_task = self._recovery_task = self._flush_task = None
+        self._refresh_task = self._recovery_task = self._flush_task = self._scan_task = None
         self._started = False
 
     def _register_event_listeners(self) -> None:
@@ -272,19 +365,32 @@ class ProfileCoordinator:
             self._flush_task = self._create_task(self._flush_events())
 
     async def _flush_events(self) -> None:
-        await asyncio.sleep(0)
-        pending = set(self._pending_events)
-        self._pending_events.clear()
-        for event_type in sorted(pending):
-            try:
-                await self.client.invalidate(event_type)
-            except Exception as exc:
-                self.last_error = type(exc).__name__
-        if pending:
+        # Drain repeatedly: registry events can arrive while invalidation or
+        # reconciliation is awaiting the gateway. A single-shot flush would
+        # leave those events pending without scheduling another flush.
+        for _batch in range(8):
+            await asyncio.sleep(0)
+            pending = set(self._pending_events)
+            self._pending_events.clear()
+            if not pending:
+                return
+            for event_type in sorted(pending):
+                try:
+                    await self.client.invalidate(event_type)
+                except Exception as exc:
+                    self.last_error = type(exc).__name__
             try:
                 await self.async_reconcile()
             except Exception as exc:
                 self.last_error = type(exc).__name__
+
+        # Keep event processing bounded even if an integration continuously
+        # emits registry changes. A new task drains any events that arrived
+        # while this batch was running, without allowing one task to loop
+        # forever and starve the Home Assistant event loop.
+        await asyncio.sleep(0)
+        if self._pending_events:
+            self._flush_task = self._create_task(self._flush_events())
 
     def _refresh_state_cache(self) -> None:
         self._state_by_capability.clear()
@@ -389,7 +495,9 @@ class ProfileCoordinator:
             status = await self.client.status()
             monitor = status.get("monitor", {}) if isinstance(status, Mapping) else {}
             pending = monitor.get("pending_sections", ()) if isinstance(monitor, Mapping) else ()
-            if status.get("status") != "active" or pending or status.get("profile_revision") != self.profile_revision:
+            generation = status.get("generation") if isinstance(status, Mapping) else None
+            generation_changed = generation is not None and str(generation) != self._app_generation
+            if status.get("status") != "active" or pending or generation_changed or status.get("profile_revision") != self.profile_revision:
                 await self.async_reconcile()
         except Exception as exc:
             self.last_error = type(exc).__name__

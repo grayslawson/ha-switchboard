@@ -160,8 +160,11 @@ reconcile_code=$(request_code "$TMP_DIR/reconcile.json" POST /v1/profile/reconci
   sed -n '1,3p' "$TMP_DIR/reconcile.json" >&2
   exit 1
 }
-wait_for_http /readyz 200
-echo "/readyz after local fixture: HTTP 200"
+# This smoke image deliberately has no Jev credential/provider. A reconciled
+# profile is still valid and must persist, while readiness remains degraded
+# until a decision provider is configured.
+wait_for_http /readyz 503
+echo "/readyz after local fixture: HTTP 503 (expected provider-degraded state)"
 
 status_code=$(request_code "$TMP_DIR/status.json" GET /v1/profile/status \
   -H "Authorization: Bearer $SMOKE_GATEWAY_TOKEN")
@@ -169,6 +172,16 @@ status_code=$(request_code "$TMP_DIR/status.json" GET /v1/profile/status \
   echo "authorized profile status returned HTTP $status_code" >&2
   exit 1
 }
+python3 - "$TMP_DIR/status.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    status = json.load(handle)
+assert status["status"] == "active", status
+assert status["profile_revision"], status
+assert status["capability_count"] > 0, status
+PY
 
 runtime_uid=$("$ENGINE" exec "$CONTAINER" awk '/^Uid:/ {print $2}' /proc/1/status)
 runtime_gid=$("$ENGINE" exec "$CONTAINER" awk '/^Gid:/ {print $2}' /proc/1/status)
@@ -187,7 +200,8 @@ path = Path("/data/profile.json")
 assert path.is_file(), "profile.json was not persisted"
 text = path.read_text()
 payload = json.loads(text)
-assert payload.get("status") == "active", payload.get("status")
+profile = payload.get("profile", payload)
+assert profile.get("status") == "active", profile.get("status")
 assert "entity_id" not in text, "raw entity reference persisted"
 probe = Path("/data/.smoke-write")
 probe.write_text("ok")

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass, field, is_dataclass
 from enum import StrEnum
 from typing import Any, Mapping
@@ -13,6 +14,10 @@ MAX_CANDIDATES = 64
 MAX_PROFILE_CAPABILITIES = 2_000
 MAX_WARNINGS = 128
 MAX_TEXT = 4_000
+MAX_PARAMETERS = 8
+MAX_PARAMETER_QUESTIONS = 8
+MAX_PARAMETER_ENUM = 32
+MAX_PARAMETER_TEXT = 128
 
 
 class LifecycleStatus(StrEnum):
@@ -149,6 +154,134 @@ def _json_value(value: Any) -> Any:
     if isinstance(value, (list, tuple, set)):
         return [_json_value(item) for item in value]
     return value
+
+
+def parameter_questions(candidates: tuple[Mapping[str, Any], ...] | list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Return a bounded, provider-neutral contract for typed parameters.
+
+    The provider may answer these questions, but it never supplies a service
+    name or entity reference.  Invalid schemas are omitted so they cannot
+    widen the provider contract accidentally.
+    """
+
+    questions: list[dict[str, Any]] = []
+    for candidate in candidates:
+        if not isinstance(candidate, Mapping):
+            continue
+        capability_id = candidate.get("capability_id")
+        schema = candidate.get("parameter_schema")
+        if not isinstance(capability_id, str) or not capability_id or not isinstance(schema, Mapping):
+            continue
+        try:
+            properties, required = _parameter_schema(schema)
+        except ValueError:
+            continue
+        for name, spec in properties.items():
+            if len(questions) >= MAX_PARAMETER_QUESTIONS:
+                return questions
+            if not isinstance(name, str) or not name or len(name) > 64 or not isinstance(spec, Mapping):
+                continue
+            kind = spec["type"]
+            question: dict[str, Any] = {
+                "name": name,
+                "kind": kind,
+                "capability_id": capability_id,
+                "required": name in required,
+            }
+            if kind == "number":
+                minimum, maximum = spec["minimum"], spec["maximum"]
+                question["range"] = [minimum, maximum]
+            else:
+                enum = spec.get("enum")
+                if enum is not None:
+                    question["options"] = list(enum)
+            questions.append(question)
+    return questions
+
+
+def normalize_typed_parameters(
+    parameters: Mapping[str, Any],
+    capability: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Normalize a provider answer against one advertised capability schema."""
+
+    if not isinstance(parameters, Mapping) or len(parameters) > MAX_PARAMETERS:
+        raise ValueError("parameters must be a bounded object")
+    schema = capability.get("parameter_schema", {})
+    if not isinstance(schema, Mapping):
+        raise ValueError("parameter schema is invalid")
+    properties, required = _parameter_schema(schema)
+    if set(parameters) - set(properties):
+        raise ValueError("parameter is outside the advertised schema")
+    missing = set(required) - set(parameters)
+    if missing:
+        raise ValueError("required parameter is missing")
+    normalized: dict[str, Any] = {}
+    for name, value in parameters.items():
+        spec = properties.get(name)
+        if not isinstance(name, str) or not isinstance(spec, Mapping):
+            raise ValueError("parameter declaration is invalid")
+        kind = spec.get("type")
+        if kind == "number":
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                raise ValueError("parameter must be numeric")
+            minimum, maximum = spec["minimum"], spec["maximum"]
+            if not math.isfinite(value):
+                raise ValueError("numeric parameter is not finite")
+            if not minimum <= value <= maximum:
+                raise ValueError("numeric parameter is outside its range")
+            normalized[name] = float(value)
+        elif kind == "string":
+            if not isinstance(value, str) or not value or len(value) > MAX_PARAMETER_TEXT:
+                raise ValueError("string parameter is invalid")
+            enum = spec.get("enum")
+            if enum is not None and (not isinstance(enum, (list, tuple)) or value not in enum):
+                raise ValueError("string parameter is not an allowed value")
+            normalized[name] = value
+        else:
+            raise ValueError("parameter type is unsupported")
+    return normalized
+
+
+def _parameter_schema(schema: Mapping[str, Any]) -> tuple[Mapping[str, Mapping[str, Any]], tuple[str, ...]]:
+    """Validate the small schema language exposed to typed providers."""
+
+    properties = schema.get("properties", {})
+    required = schema.get("required", ())
+    if not isinstance(properties, Mapping) or not isinstance(required, (list, tuple)):
+        raise ValueError("parameter schema is invalid")
+    if len(properties) > MAX_PARAMETERS or len(required) > MAX_PARAMETERS:
+        raise ValueError("parameter schema exceeds its bound")
+    if any(not isinstance(name, str) or not name or len(name) > 64 for name in required):
+        raise ValueError("parameter schema has invalid required names")
+    if len(set(required)) != len(required) or not set(required) <= set(properties):
+        raise ValueError("parameter schema has conflicting required fields")
+    checked: dict[str, Mapping[str, Any]] = {}
+    for name, spec in properties.items():
+        if not isinstance(name, str) or not name or len(name) > 64 or not isinstance(spec, Mapping):
+            raise ValueError("parameter schema has an invalid property")
+        kind = spec.get("type")
+        if kind == "number":
+            minimum, maximum = spec.get("minimum"), spec.get("maximum")
+            if (
+                not isinstance(minimum, (int, float)) or isinstance(minimum, bool)
+                or not isinstance(maximum, (int, float)) or isinstance(maximum, bool)
+                or not math.isfinite(minimum) or not math.isfinite(maximum) or minimum > maximum
+            ):
+                raise ValueError("parameter schema has an invalid numeric range")
+        elif kind == "string":
+            enum = spec.get("enum")
+            if enum is not None and (
+                not isinstance(enum, (list, tuple))
+                or len(enum) > MAX_PARAMETER_ENUM
+                or any(not isinstance(item, str) or not item or len(item) > MAX_PARAMETER_TEXT for item in enum)
+                or len(set(enum)) != len(enum)
+            ):
+                raise ValueError("parameter schema has an invalid enum")
+        else:
+            raise ValueError("parameter schema has an unsupported type")
+        checked[name] = spec
+    return checked, tuple(required)
 
 
 @dataclass(frozen=True, slots=True)
@@ -405,6 +538,7 @@ class ModelRoute:
     availability: str = "ready"
     fallback_route_ids: tuple[str, ...] = ()
     revision: str = "routes-1"
+    schema_version: int = 1
 
     def supports(self, complexity: Complexity, privacy: PrivacyMode) -> bool:
         order = {

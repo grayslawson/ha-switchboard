@@ -2,14 +2,25 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import isfinite
 from typing import TYPE_CHECKING, Any, Mapping, Protocol
+import hashlib
+import json
 
 if TYPE_CHECKING:
     from homeassistant.core import Context
 
 from .capabilities import CapabilityMap, CapabilityTarget
+
+try:  # pragma: no cover - available in the Home Assistant runtime
+    from homeassistant.exceptions import HomeAssistantError
+except ImportError:  # pragma: no cover - host-side contract tests
+    class HomeAssistantError(Exception):
+        """Fallback marker for environments without Home Assistant."""
+
+
+_CORE_EXECUTION_ERRORS = (HomeAssistantError, RuntimeError, ValueError, TypeError, OSError)
 
 
 _CORE_EXECUTABLE_OPERATIONS = frozenset(
@@ -171,6 +182,36 @@ def verify_operation(
 @dataclass(slots=True)
 class ExecutionBoundary:
     executor: HomeAssistantExecutor
+    diagnostics: Any = None
+    _receipts: dict[str, dict[str, Any]] = field(default_factory=dict, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self._receipts.clear()
+
+    def _record_outcome(
+        self,
+        result: Mapping[str, Any],
+        *,
+        request_id: str | None,
+        operation: str,
+        **fields: Any,
+    ) -> None:
+        """Record only bounded outcome metadata; never target references."""
+
+        if self.diagnostics is None:
+            return
+        ok = bool(result.get("ok", False))
+        self.diagnostics.record(
+            "execution_outcome",
+            level="info" if ok else "warning",
+            correlation_id=request_id,
+            operation=operation,
+            outcome=str(result.get("response_key", "unknown")),
+            **fields,
+        )
+
+    def _idempotency_key(self, request_id: str, capability_ids: tuple[str, ...], operation: str) -> str:
+        return hashlib.sha256(json.dumps([request_id, capability_ids, operation], sort_keys=True).encode()).hexdigest()
 
     async def execute_batch_proposal(
         self,
@@ -179,6 +220,46 @@ class ExecutionBoundary:
         expected_profile_revision: str,
         current_profile_revision: str,
         context: Context | None = None,
+        request_id: str | None = None,
+    ) -> dict[str, Any]:
+        try:
+            result = await self._execute_batch_proposal(
+                capability_ids=capability_ids,
+                expected_profile_revision=expected_profile_revision,
+                current_profile_revision=current_profile_revision,
+                context=context,
+                request_id=request_id,
+            )
+        except _CORE_EXECUTION_ERRORS as exc:
+            if self.diagnostics is not None:
+                self.diagnostics.record_exception(
+                    exc,
+                    correlation_id=request_id,
+                    operation="batch",
+                )
+            result = {
+                "ok": False,
+                "response_key": "batch_partial_failure",
+                "verified_count": 0,
+                "total_count": len(capability_ids),
+            }
+        self._record_outcome(
+            result,
+            request_id=request_id,
+            operation="batch",
+            verified_count=result.get("verified_count", 0),
+            total_count=result.get("total_count", len(capability_ids)),
+        )
+        return result
+
+    async def _execute_batch_proposal(
+        self,
+        *,
+        capability_ids: tuple[str, ...],
+        expected_profile_revision: str,
+        current_profile_revision: str,
+        context: Context | None = None,
+        request_id: str | None = None,
     ) -> dict[str, Any]:
         """Preflight every routine target before the first write, then verify each.
 
@@ -211,13 +292,26 @@ class ExecutionBoundary:
             before_states.append(before)
         if len({target.entity_id for target in targets}) != len(targets):
             return {"ok": False, "response_key": "batch_invalid", "verified_count": 0, "total_count": len(capability_ids)}
-        if len({(target.domain, target.operation) for target in targets}) != 1:
+        if len({target.operation for target in targets}) != 1:
             return {"ok": False, "response_key": "batch_invalid", "verified_count": 0, "total_count": len(capability_ids)}
 
+        operation = targets[0].operation
+        if request_id and operation != "toggle":
+            key = self._idempotency_key(request_id, capability_ids, operation)
+            prior = self._receipts.get(key)
+            if prior is not None:
+                return dict(prior)
+
         verified_count = 0
+        target_results: list[dict[str, Any]] = []
         for target, before in zip(targets, before_states):
             if callable(current_check) and not current_check(expected_profile_revision):
-                return {"ok": False, "response_key": "batch_partial_failure", "verified_count": verified_count, "total_count": len(targets)}
+                result = {"ok": False, "response_key": "batch_partial_failure", "verified_count": verified_count, "total_count": len(targets)}
+                if request_id:
+                    result["target_results"] = target_results
+                if request_id and operation != "toggle":
+                    self._receipts[key] = dict(result)
+                return result
             try:
                 if context is None:
                     result = await self.executor.execute(target, {})
@@ -225,11 +319,34 @@ class ExecutionBoundary:
                     result = await self.executor.execute(target, {}, context=context)
                 after = await self.executor.read_state(target)
                 if not self.executor.verify(target, {}, before, after, result):
-                    return {"ok": False, "response_key": "batch_partial_failure", "verified_count": verified_count, "total_count": len(targets)}
-            except Exception:
-                return {"ok": False, "response_key": "batch_partial_failure", "verified_count": verified_count, "total_count": len(targets)}
+                    failure = {"ok": False, "response_key": "batch_partial_failure", "verified_count": verified_count, "total_count": len(targets)}
+                    if request_id:
+                        failure["target_results"] = target_results
+                    if request_id and operation != "toggle":
+                        self._receipts[key] = dict(failure)
+                    return failure
+            except _CORE_EXECUTION_ERRORS as exc:
+                if self.diagnostics is not None:
+                    self.diagnostics.record_exception(
+                        exc,
+                        correlation_id=request_id,
+                        operation="batch",
+                        target_count=len(targets),
+                    )
+                result = {"ok": False, "response_key": "batch_partial_failure", "verified_count": verified_count, "total_count": len(targets)}
+                if request_id:
+                    result["target_results"] = target_results
+                if request_id and operation != "toggle":
+                    self._receipts[key] = dict(result)
+                return result
+            target_results.append({"capability_id": target.capability_id, "display_name": target.display_name or target.domain, "verified": True})
             verified_count += 1
-        return {"ok": True, "response_key": "batch_execute_verified", "verified_count": verified_count, "total_count": len(targets)}
+        result = {"ok": True, "response_key": "batch_execute_verified", "verified_count": verified_count, "total_count": len(targets)}
+        if request_id:
+            result["target_results"] = target_results
+        if request_id and operation != "toggle":
+            self._receipts[key] = dict(result)
+        return result
 
     async def execute_proposal(
         self,
@@ -240,6 +357,39 @@ class ExecutionBoundary:
         current_profile_revision: str,
         confirmed: bool,
         context: Context | None = None,
+        request_id: str | None = None,
+    ) -> dict[str, Any]:
+        try:
+            result = await self._execute_proposal(
+                capability_id=capability_id,
+                parameters=parameters,
+                expected_profile_revision=expected_profile_revision,
+                current_profile_revision=current_profile_revision,
+                confirmed=confirmed,
+                context=context,
+                request_id=request_id,
+            )
+        except _CORE_EXECUTION_ERRORS as exc:
+            if self.diagnostics is not None:
+                self.diagnostics.record_exception(
+                    exc,
+                    correlation_id=request_id,
+                    operation="execute",
+                )
+            result = {"ok": False, "response_key": "execution_failed"}
+        self._record_outcome(result, request_id=request_id, operation="execute")
+        return result
+
+    async def _execute_proposal(
+        self,
+        *,
+        capability_id: str,
+        parameters: Mapping[str, Any],
+        expected_profile_revision: str,
+        current_profile_revision: str,
+        confirmed: bool,
+        context: Context | None = None,
+        request_id: str | None = None,
     ) -> dict[str, Any]:
         if expected_profile_revision != current_profile_revision:
             return {"ok": False, "response_key": "profile_stale"}
@@ -259,22 +409,51 @@ class ExecutionBoundary:
             return {"ok": False, "response_key": "policy_denied"}
         if target.risk_class == "confirm" and not confirmed:
             return {"ok": False, "response_key": "confirmation_required"}
-        before = await self.executor.read_state(target)
+        idempotency_key = None
+        if request_id and target.operation != "toggle":
+            idempotency_key = self._idempotency_key(request_id, (capability_id,), target.operation)
+            prior = self._receipts.get(idempotency_key)
+            if prior is not None:
+                return dict(prior)
+        try:
+            before = await self.executor.read_state(target)
+        except _CORE_EXECUTION_ERRORS as exc:
+            if self.diagnostics is not None:
+                self.diagnostics.record_exception(
+                    exc,
+                    correlation_id=request_id,
+                    operation="read_before",
+                )
+            failure = {"ok": False, "response_key": "execution_failed"}
+            return failure
         if str(before.get("state", "unknown")) in {"unknown", "unavailable"}:
             return {"ok": False, "response_key": "candidate_not_allowed"}
-        if context is None:
-            result = await self.executor.execute(target, clean_parameters)
-        else:
-            result = await self.executor.execute(target, clean_parameters, context=context)
-        after = await self.executor.read_state(target)
-        verified = self.executor.verify(target, clean_parameters, before, after, result)
-        return {
+        try:
+            if context is None:
+                result = await self.executor.execute(target, clean_parameters)
+            else:
+                result = await self.executor.execute(target, clean_parameters, context=context)
+            after = await self.executor.read_state(target)
+            verified = self.executor.verify(target, clean_parameters, before, after, result)
+        except _CORE_EXECUTION_ERRORS as exc:
+            if self.diagnostics is not None:
+                self.diagnostics.record_exception(
+                    exc,
+                    correlation_id=request_id,
+                    operation=target.operation,
+                )
+            failure = {"ok": False, "response_key": "execution_failed"}
+            return failure
+        result_payload = {
             "ok": verified,
             "response_key": "execute_verified" if verified else "post_action_unverified",
             "pre_state": dict(before),
             "post_state": dict(after),
             "result": {"ok": bool(result.get("ok", False))},
         }
+        if idempotency_key:
+            self._receipts[idempotency_key] = dict(result_payload)
+        return result_payload
 
 
 class CoreHomeAssistantExecutor:

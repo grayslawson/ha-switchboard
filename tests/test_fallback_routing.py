@@ -5,7 +5,7 @@ from ha_switchboard.gateway import Gateway, GatewayConfig
 from ha_switchboard.handoff import HandoffBroker
 from ha_switchboard.jev_client import JevUnavailable, StaticJevClient
 from ha_switchboard.protocol import Complexity, JevDecision, ModelRoute, PrivacyMode, ResponseKind, ResultKind, RouteKind
-from ha_switchboard.route_policy import RouteRegistry
+from ha_switchboard.route_policy import RouteRegistry, select_route
 from ha_switchboard.server import build_gateway
 from ha_switchboard.store import ProfileStore
 
@@ -31,6 +31,22 @@ class RouteAdapter:
             "handoff_id": request.handoff_id,
             "kind": "tool_proposal",
             "proposals": [{"capability_id": self.choice, "parameter_refs": [], "reason": "bounded match"}],
+        }
+
+
+class ParameterRouteAdapter(RouteAdapter):
+    def invoke(self, route, request):
+        self.calls += 1
+        return {
+            "handoff_id": request.handoff_id,
+            "route_id": route.route_id,
+            "kind": "tool_proposal",
+            "proposals": [{
+                "capability_id": request.relevant_facts[0]["capability_id"],
+                "parameter_refs": [],
+                "parameters": {"brightness": 42},
+                "reason": "bounded match",
+            }],
         }
 
 
@@ -123,8 +139,76 @@ def test_server_builds_configurable_openrouter_or_typed_http_fallback(monkeypatc
     assert openrouter.routes.routes[0].privacy_modes == (PrivacyMode.HOSTED_ALLOWED,)
 
     monkeypatch.setattr(server, "_load_options", lambda _path: {
-        **common, "fallback_provider": "typed_http", "fallback_endpoint": "http://local-reasoner:8090/decide",
+        **common, "fallback_provider": "typed_http", "fallback_endpoint": "http://localhost:8090/decide",
     })
     local = build_gateway(str(tmp_path))
     assert isinstance(local.handoff.adapter, HttpRouteAdapter)
     assert PrivacyMode.LOCAL_ONLY in local.routes.routes[0].privacy_modes
+
+
+def test_open_circuit_skips_primary_route_for_failover() -> None:
+    routes = RouteRegistry.from_dict({"routes": [
+        {"route_id": "primary", "response_kinds": ["prose_response"], "complexity_ceiling": "reasoning", "privacy_modes": ["local_only"], "latency_budget_ms": 100},
+        {"route_id": "secondary", "response_kinds": ["prose_response"], "complexity_ceiling": "reasoning", "privacy_modes": ["local_only"], "latency_budget_ms": 100},
+    ]})
+    routes.record_failure("primary")
+    routes.record_failure("primary")
+    selected = select_route(routes, complexity=Complexity.SIMPLE, privacy_mode=PrivacyMode.LOCAL_ONLY,
+                            required_response=ResponseKind.PROSE_RESPONSE, max_latency_ms=500, max_cost=1)
+    assert selected.route_id == "secondary"
+
+
+def test_delegated_typed_parameters_reenter_gateway_validation(tmp_path, sanitized_discovery):
+    adapter = ParameterRouteAdapter("tool_proposal")
+    routes = _routes()
+    gateway = Gateway(
+        store=ProfileStore(tmp_path),
+        jev=StaticJevClient(JevDecision(RouteKind.CLARIFY, Complexity.SIMPLE)),
+        routes=routes,
+        handoff=HandoffBroker(routes, adapter),
+    )
+    gateway.reconcile(sanitized_discovery)
+    capability = next(item for item in gateway.active_profile.capabilities if item.operation == "set_brightness")
+    result = gateway.process({
+        **_request(gateway, "Set the living room lights brightness to 42 percent", "parameterized"),
+        "candidates": [{
+            "capability_id": capability.capability_id,
+            "display_name": capability.display_name,
+            "domain": capability.domain,
+            "operation": capability.operation,
+            "parameter_schema": capability.parameter_schema,
+        }],
+    })
+    assert result.kind is ResultKind.EXECUTE
+    assert result.parameters == {"brightness": 42.0}
+
+
+def test_delegated_out_of_range_parameter_is_refused(tmp_path, sanitized_discovery):
+    class BadParameterAdapter(ParameterRouteAdapter):
+        def invoke(self, route, request):
+            response = super().invoke(route, request)
+            response["proposals"][0]["parameters"]["brightness"] = 101
+            return response
+
+    adapter = BadParameterAdapter("tool_proposal")
+    routes = _routes()
+    gateway = Gateway(
+        store=ProfileStore(tmp_path),
+        jev=StaticJevClient(JevDecision(RouteKind.CLARIFY, Complexity.SIMPLE)),
+        routes=routes,
+        handoff=HandoffBroker(routes, adapter),
+    )
+    gateway.reconcile(sanitized_discovery)
+    capability = next(item for item in gateway.active_profile.capabilities if item.operation == "set_brightness")
+    result = gateway.process({
+        **_request(gateway, "Set the living room lights brightness to 101 percent", "parameterized-invalid"),
+        "candidates": [{
+            "capability_id": capability.capability_id,
+            "display_name": capability.display_name,
+            "domain": capability.domain,
+            "operation": capability.operation,
+            "parameter_schema": capability.parameter_schema,
+        }],
+    })
+    assert result.kind is ResultKind.REFUSE
+    assert result.response_key == "invalid_parameters"

@@ -9,7 +9,10 @@
       "aliases": ["living room light", "lounge lights"],
       "exposed": true,
       "available": true,
-      "operations": ["turn_on", "turn_off", "toggle", "set_brightness"]
+      "operations": ["turn_on", "turn_off", "toggle", "set_brightness"],
+      "parameter_schemas": {
+        "set_brightness": {"required": ["brightness"], "properties": {"brightness": {"type": "number", "minimum": 0, "maximum": 100}}}
+      }
     },
     {
       "entity_id": "light.living_room_lamp",
@@ -17,6 +20,16 @@
       "domain": "light",
       "area": "Living room",
       "aliases": ["living room light"],
+      "exposed": true,
+      "available": true,
+      "operations": ["turn_on", "turn_off", "toggle"]
+    },
+    {
+      "entity_id": "fan.living_room",
+      "name": "Living room fan",
+      "domain": "fan",
+      "area": "Living room",
+      "aliases": ["living room fan"],
       "exposed": true,
       "available": true,
       "operations": ["turn_on", "turn_off", "toggle"]
@@ -41,6 +54,17 @@
       "operations": ["lock", "unlock"]
     },
     {
+      "entity_id": "cover.garage",
+      "name": "Garage door",
+      "domain": "cover",
+      "area": "Entry",
+      "aliases": ["garage door"],
+      "exposed": true,
+      "available": true,
+      "risk_class": "confirm",
+      "operations": ["open_cover", "close_cover"]
+    },
+    {
       "entity_id": "climate.downstairs",
       "name": "Downstairs thermostat",
       "domain": "climate",
@@ -48,15 +72,55 @@
       "exposed": true,
       "available": true,
       "operations": ["set_temperature", "set_hvac_mode"]
+    },
+    {
+      "entity_id": "media_player.living_room",
+      "name": "Living room player",
+      "domain": "media_player",
+      "area": "Living room",
+      "aliases": ["music player"],
+      "exposed": true,
+      "available": true,
+      "operations": ["turn_on", "turn_off", "play", "pause", "stop", "set_volume"],
+      "parameter_schemas": {
+        "set_volume": {"required": ["volume"], "properties": {"volume": {"type": "number", "minimum": 0, "maximum": 1}}}
+      }
+    },
+    {
+      "entity_id": "sensor.office_temperature",
+      "name": "Office temperature",
+      "domain": "sensor",
+      "area": "Office",
+      "aliases": ["office temperature"],
+      "exposed": true,
+      "available": true,
+      "operations": []
+    },
+    {
+      "entity_id": "binary_sensor.entry_motion",
+      "name": "Entry motion",
+      "domain": "binary_sensor",
+      "area": "Entry",
+      "aliases": ["motion at the door"],
+      "exposed": true,
+      "available": true,
+      "operations": []
     }
   ],
-  "devices": [],
-  "organization": {"areas": ["Living room", "Kitchen", "Entry", "Downstairs"]},
-  "exposure": ["light.living_room", "light.living_room_lamp", "switch.coffee", "lock.front_door", "climate.downstairs"],
+  "devices": [
+    {"name": "Living room controls", "area": "Living room", "entity_count": 4, "domains": ["light", "fan", "media_player"]},
+    {"name": "Entry sensors", "area": "Entry", "entity_count": 2, "domains": ["cover", "lock", "binary_sensor"]}
+  ],
+  "organization": {"areas": ["Living room", "Kitchen", "Entry", "Downstairs", "Office"], "floors": ["Main"]},
+  "exposure": ["light.living_room", "light.living_room_lamp", "fan.living_room", "switch.coffee", "lock.front_door", "climate.downstairs", "media_player.living_room", "sensor.office_temperature", "binary_sensor.entry_motion"],
   "services": [
     {"domain": "light", "operations": ["turn_on", "turn_off", "toggle", "set_brightness"]},
     {"domain": "switch", "operations": ["turn_on", "turn_off", "toggle"]},
     {"domain": "climate", "operations": ["set_temperature", "set_hvac_mode"]}
+    ,{"domain": "fan", "operations": ["turn_on", "turn_off", "toggle"]}
+    ,{"domain": "media_player", "operations": ["turn_on", "turn_off", "play", "pause", "stop", "set_volume"]}
+    ,{"domain": "lock", "operations": ["lock", "unlock"]}
+    ,{"domain": "cover", "operations": ["open_cover", "close_cover"]}
   ],
   "routines": [
     {"entity_id": "script.goodnight", "name": "Good night", "kind": "script", "exposed": true}

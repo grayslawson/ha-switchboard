@@ -1,4 +1,13 @@
 {
+  "native_fast_path": {
+    "route": "native",
+    "complexity": "simple",
+    "confidence": 0.99,
+    "ambiguity": 0.0,
+    "risk": "routine",
+    "requires_confirmation": false,
+    "reason": "Home Assistant native intent matched; no provider call required"
+  },
   "routine_light": {
     "route": "routine_control",
     "complexity": "simple",
@@ -10,14 +19,56 @@
     "reason": "unique exposed light"
   },
   "ambiguous": {
-    "route": "routine_control",
-    "complexity": "simple",
+    "route": "clarify",
+    "complexity": "medium",
     "capability_id": "capability-placeholder",
     "confidence": 0.91,
     "ambiguity": 0.75,
     "risk": "routine",
     "requires_confirmation": false,
+    "question": "Which living room light did you mean?",
     "reason": "two matching aliases"
+  },
+  "multi_device_lights": {
+    "route": "routine_control",
+    "complexity": "medium",
+    "capability_ids": ["capability-light-one", "capability-light-two"],
+    "confidence": 0.94,
+    "ambiguity": 0.03,
+    "risk": "routine",
+    "requires_confirmation": false,
+    "reason": "bounded group request with two exposed light capabilities"
+  },
+  "parameterized_temperature": {
+    "route": "routine_control",
+    "complexity": "medium",
+    "capability_id": "capability-thermostat-temperature",
+    "parameters": {"temperature": 21},
+    "confidence": 0.95,
+    "ambiguity": 0.02,
+    "risk": "routine",
+    "requires_confirmation": false,
+    "reason": "typed value matches the advertised bounded schema"
+  },
+  "confirmation_required": {
+    "route": "routine_control",
+    "complexity": "simple",
+    "capability_id": "capability-front-door-unlock",
+    "confidence": 0.97,
+    "ambiguity": 0.01,
+    "risk": "confirm",
+    "requires_confirmation": true,
+    "reason": "unlock operation requires an explicit user confirmation"
+  },
+  "provider_failure": {
+    "route": "delegate",
+    "complexity": "reasoning",
+    "confidence": 0.0,
+    "ambiguity": 1.0,
+    "risk": "read_only",
+    "requires_confirmation": false,
+    "error": {"kind": "provider_error", "reason": "provider_unavailable"},
+    "reason": "bounded provider failure fixture; no credential or URL included"
   },
   "delegated": {
     "route": "delegate",

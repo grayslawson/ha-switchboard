@@ -5,10 +5,13 @@ All notable App changes will be recorded here.
 Release availability is determined by the matching source tag, App image,
 and public GitHub release, not by this changelog alone.
 
-## 0.2.0
+## 0.2.0 — source release candidate (not published)
 
-- Adds the Core conversation agent, automatic and manual capability scans,
-  read-only answers, bounded multi-device controls, and diagnostic sensors.
+- Adds the Core Conversation agent, automatic and manual capability scans,
+  local read-only answers, bounded multi-device controls, and diagnostic
+  sensors. Home Assistant's native intent matching and Assist/Conversation
+  channels remain the simple-command fast path; Switchboard is an additional
+  bounded routing layer.
 - Adds a native OpenRouter Decisions adapter and configurable fallback routes.
   Hosted fallback requires explicit `hosted_allowed` privacy mode.
 - Adds a redacted App Web UI, clearer App options, and local development
@@ -17,17 +20,29 @@ and public GitHub release, not by this changelog alone.
 - Hardens redaction, provider transport, Core execution checks, and release
   gates. Provider and Home Assistant credentials are never included in model
   request context.
-- Keeps the project experimental: confirmation continuation, broad parameter
-  extraction, and automatic setup of every Home Assistant surface are not yet
-  complete.
+- Keeps the project experimental: Core-local clarification/parameter/
+  confirmation continuation is bounded and unit-tested but lacks complete live
+  Assist/E2E acceptance, native OpenRouter Decisions does not extract action
+  parameters, script/scene activation is held out of Core execution, and
+  automatic setup of every Home Assistant surface is not provided.
+- Uses one coordinated version across the App, image, Python package, Core
+  manifest, and this changelog. This entry is source metadata only; it does
+  not claim a public tag, GHCR digest, GitHub Release, HACS acceptance, or
+  live App/Core canary.
 
-## 0.1.3 - 2026-09-19 (unpublished source, included in 0.2.0)
+The coordinated source authorities are `app/config.yaml` and `app/Dockerfile`
+for the App/image, `app/ha_switchboard/__init__.py` and `pyproject.toml` for
+the gateway package, and `custom_components/ha_switchboard/manifest.json` for
+Core. All currently read `0.2.0`; this does not establish the version of an
+installed or published artifact.
+
+## 0.1.3 - 2026-09-19
 
 - Added plain-language Supervisor option labels and inline help for connection,
   provider, privacy, scan, and token settings.
 - Exposed the configurable fallback options in the local App manifest.
 
-## 0.1.2 - 2026-09-19 (unpublished source, included in 0.2.0)
+## 0.1.2 - 2026-09-19
 
 - Added bounded multi-device on/off requests for exposed lights, switches,
   and fans, with per-member preflight and partial-failure reporting.
@@ -36,7 +51,8 @@ and public GitHub release, not by this changelog alone.
 - Added local read-only state answers and diagnostic sensors for profile
   readiness, capability count, and pending invalidations.
 - Added a native OpenRouter Decisions adapter for parameter-free controls.
-  Read-only answers and parameter extraction are not yet supported by it.
+  Read-only answers are served from Core's local snapshot; the native adapter
+  does not extract action parameters and asks for clarification instead.
 - Added a redacted App Web UI with profile status and a manual scan request.
   Core scans on startup and detects App restarts or manual requests without
   waiting for the periodic refresh interval.
@@ -49,7 +65,7 @@ and public GitHub release, not by this changelog alone.
   `libpython3.12.so.1.0` and `Py_BytesMain` relocation errors.
 - Added a packaging regression check and documented the AppArmor diagnosis.
 
-## 0.1.1 - 2026-09-19 (unpublished source, included in 0.2.0)
+## 0.1.1 - 2026-09-19
 
 - Fixed the custom AppArmor profile so the non-root shell entrypoint and Python
   runtime can start under Supervisor protection.
@@ -57,7 +73,7 @@ and public GitHub release, not by this changelog alone.
 - Documented every App option, gateway-token boundary, OpenRouter limitation,
   security model, and startup troubleshooting path.
 
-## 0.1.0 - Public release
+## 0.1.0 - Initial development release (availability external)
 
 - Initial development release of the HA Switchboard gateway App.
 - Added Supervisor ingress, least-privilege defaults, and persistent `/data`

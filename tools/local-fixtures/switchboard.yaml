@@ -10,6 +10,8 @@ input_boolean:
     name: Switchboard Fixture Fan Power
   switchboard_fixture_cover_open:
     name: Switchboard Fixture Cover Open
+  switchboard_fixture_garage_open:
+    name: Switchboard Fixture Garage Open
   switchboard_fixture_heater_power:
     name: Switchboard Fixture Heater Power
   switchboard_fixture_motion:
@@ -126,6 +128,18 @@ template:
           action: input_boolean.turn_off
           target:
             entity_id: input_boolean.switchboard_fixture_cover_open
+      - name: Switchboard Fixture Garage
+        unique_id: switchboard_fixture_garage
+        device_class: garage
+        state: "{{ 'open' if is_state('input_boolean.switchboard_fixture_garage_open', 'on') else 'closed' }}"
+        open_cover:
+          action: input_boolean.turn_on
+          target:
+            entity_id: input_boolean.switchboard_fixture_garage_open
+        close_cover:
+          action: input_boolean.turn_off
+          target:
+            entity_id: input_boolean.switchboard_fixture_garage_open
     lock:
       - name: Switchboard Fixture Lock
         unique_id: switchboard_fixture_lock
@@ -216,3 +230,12 @@ scene:
   - name: Switchboard Fixture Calm
     entities:
       input_boolean.switchboard_fixture_light_power: "off"
+
+# Native groups are intentionally bounded to the two fixture lights. Registry
+# labels are attached by local_api.py because labels are Core-owned metadata.
+group:
+  switchboard_fixture_lights:
+    name: Switchboard Fixture Lights
+    entities:
+      - light.switchboard_fixture_light
+      - light.switchboard_fixture_lamp
