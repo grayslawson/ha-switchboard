@@ -336,10 +336,12 @@ rejected. `typed_http` is different: it uses the explicit
 according to endpoint and privacy policy.
 
 Explicit plural on/off requests for exposed lights, switches, and fans can
-select an opaque group of up to 32 members. The Core integration preflights
-every member, then executes and verifies them sequentially; partial completion
-is possible if a later member fails. Other multi-device requests remain
-unsupported.
+select an opaque group of up to 32 members. The request may target the whole
+exposed domain or one unambiguous known area, floor, or label. The Core
+integration preflights every member, then executes and verifies them
+sequentially; partial completion is possible if a later member fails. Home
+Assistant group membership, mixed-domain groups, and other multi-device
+operations remain unsupported.
 
 Clarification, parameter, and confirmation replies use the Core-local
 `ConversationContextStore`. A pending entry is short-lived, matched to the

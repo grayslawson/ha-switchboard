@@ -96,3 +96,30 @@ def test_dashboard_humanizes_and_bounds_api_text() -> None:
     assert "humanize(item.status" in page
     assert "profile_revision" in page
     assert "configuration_warnings" in page
+
+
+def test_dashboard_exposes_keyboard_landmarks_and_dynamic_announcements() -> None:
+    page = html()
+
+    for phrase in (
+        'class="skip-link"',
+        "main.id='dashboard-content'",
+        "main.setAttribute('aria-labelledby','dashboard-title')",
+        "setAttribute('aria-atomic','true')",
+        "aria-busy",
+        "aria-disabled",
+        "setAttribute('role','log')",
+        "setAttribute('aria-label','Diagnostic events')",
+        "Refreshing dashboard…",
+        "Loading next diagnostics page…",
+    ):
+        assert phrase in page
+
+
+def test_dashboard_keeps_reduced_motion_and_secret_safe_accessibility_script() -> None:
+    page = html()
+
+    assert "prefers-reduced-motion:reduce" in page
+    assert "new MutationObserver" in page
+    assert "innerHTML" not in page
+    assert "textContent=value" in page

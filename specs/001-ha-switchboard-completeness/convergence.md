@@ -52,6 +52,14 @@ evidence.
 - The fixture reports 24 executable Switchboard operation-matrix rows.
   Script and scene are native Core-only surfaces and are not Switchboard
   `activate` capabilities.
+- Explicit light, switch, and fan on/off batches can target the whole exposed
+  domain or one unambiguous known area, floor, or label. Batch execution stays
+  bounded at 32 targets and fail-closed for ambiguous, unavailable, or unsafe
+  members; Home Assistant group membership and other batch operations remain
+  outside the current boundary.
+- The App dashboard now exposes keyboard landmarks, live announcements,
+  diagnostic-log semantics, busy/disabled state, and reduced-motion behavior;
+  browser-level accessibility inspection remains an open acceptance gate.
 - `tools/local-dev.sh` preserves the local Supervisor/Core volume by default;
   reset is guarded by a verified snapshot and explicit confirmation.
 - Supervisor discovery retry is bounded and reuses a sanitized payload.

@@ -78,6 +78,55 @@ def test_area_group_is_narrower_than_whole_home(tmp_path, sanitized_discovery):
     assert len(group.members) == 2
 
 
+def test_label_scope_selects_only_matching_lights(tmp_path, sanitized_discovery):
+    sanitized_discovery["entities"][0]["labels"] = ["Evening"]
+    sanitized_discovery["entities"][1]["labels"] = ["Reading"]
+    gateway = _gateway(tmp_path, sanitized_discovery)
+
+    group = build_batch_group("Turn on all lights with the Evening label", gateway.active_profile)
+
+    assert group is not None and group.label == "Evening" and group.area is None
+    assert len(group.members) == 1
+
+
+def test_floor_scope_selects_only_matching_switches(tmp_path, sanitized_discovery):
+    sanitized_discovery["entities"][3]["floor"] = "Main"
+    sanitized_discovery["entities"][3]["available"] = True
+    gateway = _gateway(tmp_path, sanitized_discovery)
+
+    group = build_batch_group("Turn off all switches on the Main floor", gateway.active_profile)
+
+    assert group is not None and group.floor == "Main" and group.area is None
+    assert len(group.members) == 1
+
+
+def test_ambiguous_label_scope_fails_closed(tmp_path, sanitized_discovery):
+    for entity in sanitized_discovery["entities"][:2]:
+        entity["labels"] = ["Scene"]
+    sanitized_discovery["entities"][0]["labels"].append("Other")
+    gateway = _gateway(tmp_path, sanitized_discovery)
+
+    try:
+        build_batch_group("Turn on all lights with the Scene or Other label", gateway.active_profile)
+    except BatchRequestError as exc:
+        assert exc.code == "batch_scope_ambiguous"
+    else:
+        raise AssertionError("ambiguous label scope was accepted")
+
+
+def test_unavailable_label_member_blocks_group(tmp_path, sanitized_discovery):
+    sanitized_discovery["entities"][0]["labels"] = ["Evening"]
+    sanitized_discovery["entities"][0]["available"] = False
+    gateway = _gateway(tmp_path, sanitized_discovery)
+
+    try:
+        build_batch_group("Turn on all lights with the Evening label", gateway.active_profile)
+    except BatchRequestError as exc:
+        assert exc.code == "batch_target_unavailable"
+    else:
+        raise AssertionError("unavailable label member was accepted")
+
+
 def test_unavailable_member_blocks_group_before_jev(tmp_path, sanitized_discovery):
     sanitized_discovery["entities"][1]["available"] = False
     gateway = _gateway(tmp_path, sanitized_discovery)

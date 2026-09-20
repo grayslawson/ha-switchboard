@@ -21,10 +21,13 @@ class BatchGroup:
     operation: str
     area: str | None
     members: tuple[str, ...]
+    floor: str | None = None
+    label: str | None = None
 
     def candidate(self) -> dict[str, object]:
         noun = self.domain.replace("_", " ") + "s"
-        scope = f" in {self.area}" if self.area else ""
+        scope_name = self.area or self.floor or self.label
+        scope = f" in {scope_name}" if scope_name else ""
         return {
             "capability_id": self.group_id,
             "display_name": f"All exposed {noun}{scope}: {self.operation.replace('_', ' ')}",
@@ -32,6 +35,8 @@ class BatchGroup:
             "domain": self.domain,
             "operation": self.operation,
             "area": self.area,
+            "floor": self.floor,
+            "label": self.label,
             "member_count": len(self.members),
             "available": True,
             "risk_class": "routine",
@@ -60,10 +65,12 @@ def build_batch_group(utterance: str, profile: HomeProfile) -> BatchGroup | None
         raise BatchRequestError("batch_scope_ambiguous")
     if not re.search(r"\b(?:turn|switch)\b", text):
         return None
-    operations = [operation for word, operation in (("on", "turn_on"), ("off", "turn_off")) if re.search(_WORD.format(word), text)]
-    if len(operations) != 1:
+    # Require the action verb next to on/off so a scope phrase such as
+    # "on the Main floor" cannot be mistaken for turn_on.
+    action = re.search(r"\b(?:turn|switch)\b.*?\b(on|off)\b", text)
+    if action is None:
         raise BatchRequestError("batch_scope_ambiguous")
-    operation = operations[0]
+    operation = f"turn_{action.group(1)}"
     domain = domains[0]
 
     # A named area must narrow the group; an overlapping/ambiguous area name
@@ -75,7 +82,23 @@ def build_batch_group(utterance: str, profile: HomeProfile) -> BatchGroup | None
     if len(matching_areas) > 1:
         raise BatchRequestError("batch_scope_ambiguous")
     area = next(iter(matching_areas), None)
-    if area is None and not (
+
+    matching_floors = {
+        item.floor for item in profile.capabilities
+        if item.domain == domain and item.floor and re.search(_WORD.format(re.escape(item.floor.casefold())), text)
+    }
+    matching_labels = {
+        label for item in profile.capabilities if item.domain == domain
+        for label in item.labels
+        if label and re.search(_WORD.format(re.escape(label.casefold())), text)
+    }
+    if len(matching_floors) > 1 or len(matching_labels) > 1:
+        raise BatchRequestError("batch_scope_ambiguous")
+    floor = next(iter(matching_floors), None)
+    label = next(iter(matching_labels), None)
+    if sum(scope is not None for scope in (area, floor, label)) > 1:
+        raise BatchRequestError("batch_scope_ambiguous")
+    if area is None and floor is None and label is None and not (
         re.search(r"\b(?:all|every|each)\b", text)
         or re.search(r"\b(?:the|my)\s+(?:lights|switches|fans)\b", text)
     ):
@@ -86,6 +109,8 @@ def build_batch_group(utterance: str, profile: HomeProfile) -> BatchGroup | None
             item for item in profile.capabilities
             if item.domain == domain and item.operation == operation and item.exposed
             and (area is None or item.area == area)
+            and (floor is None or item.floor == floor)
+            and (label is None or label in item.labels)
         ),
         key=lambda item: item.capability_id,
     )
@@ -97,6 +122,7 @@ def build_batch_group(utterance: str, profile: HomeProfile) -> BatchGroup | None
         raise BatchRequestError("batch_target_unavailable")
     if len({item.adapter_ref for item in matching}) != len(matching):
         raise BatchRequestError("batch_scope_ambiguous")
-    key = f"{profile.revision}:{domain}:{operation}:{area or '*'}"
+    scope = area or floor or label or "*"
+    key = f"{profile.revision}:{domain}:{operation}:{scope}"
     group_id = "batch-" + hashlib.sha256(key.encode()).hexdigest()[:24]
-    return BatchGroup(group_id, domain, operation, area, tuple(item.capability_id for item in matching))
+    return BatchGroup(group_id, domain, operation, area, tuple(item.capability_id for item in matching), floor, label)
