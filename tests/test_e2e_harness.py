@@ -24,6 +24,10 @@ LOCAL_SUPERVISOR_CONTAINER = "busy_cohen"
 LOCAL_CORE_CONTAINER = "homeassistant"
 HARNESS = ROOT / "tools" / "app-image-e2e.sh"
 WORKFLOW = ROOT / ".forgejo" / "workflows" / "build-app.yml"
+# Covers the fully enabled opt-in probe: seven bounded Assist turns, seven
+# bounded state reads, initial/cross-user WebSocket setup, the bounded
+# pipeline-list call, and the hard-capped natural-expiry wait, with headroom.
+FOLLOW_UP_NATURAL_EXPIRY_SUBPROCESS_TIMEOUT_SECONDS = 520
 
 
 def _fixture_api():
@@ -526,7 +530,11 @@ def _run_live_follow_up_fixture() -> dict:
         ],
         input=fixture_script.read_bytes(),
         capture_output=True,
-        timeout=210 if os.environ.get("HA_SWITCHBOARD_RUN_FOLLOW_UP_NATURAL_EXPIRY") == "1" else 45,
+        timeout=(
+            FOLLOW_UP_NATURAL_EXPIRY_SUBPROCESS_TIMEOUT_SECONDS
+            if os.environ.get("HA_SWITCHBOARD_RUN_FOLLOW_UP_NATURAL_EXPIRY") == "1"
+            else 45
+        ),
         check=False,
     )
     # Never put captured output in an assertion: fixture diagnostics must not
@@ -590,6 +598,25 @@ def test_live_follow_up_forwards_token_by_environment_name_only(monkeypatch) -> 
 
     assert report["different_user"]["status"] == "proved"
     assert supplied_token not in json.dumps(report)
+
+
+def test_live_follow_up_natural_expiry_timeout_covers_bounded_probe(monkeypatch) -> None:
+    monkeypatch.setenv("HA_SWITCHBOARD_RUN_FOLLOW_UP", "1")
+    monkeypatch.setenv("HA_SWITCHBOARD_RUN_FOLLOW_UP_NATURAL_EXPIRY", "1")
+    captured: dict[str, object] = {}
+
+    def fake_run(command, *, input, capture_output, timeout, check):
+        captured["timeout"] = timeout
+        return SimpleNamespace(
+            stdout=b'{"command":"follow-up","expiry":{"status":"unavailable"}}\n',
+            stderr=b"",
+            returncode=0,
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    _run_live_follow_up_fixture()
+
+    assert captured["timeout"] == FOLLOW_UP_NATURAL_EXPIRY_SUBPROCESS_TIMEOUT_SECONDS
 
 
 @pytest.mark.local_fixture
