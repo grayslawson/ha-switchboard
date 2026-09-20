@@ -16,10 +16,8 @@ TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ha-switchboard-smoke.XXXXXX")"
 DATA_DIR="$TMP_DIR/data"
 mkdir "$DATA_DIR"
 
-# Rootless Docker/Podman users cannot chown a host bind source. This directory
-# is disposable and private to this run; mode 0777 lets UID 65532 exercise the
-# same writable `/data` contract without elevated privileges.
-chmod 777 "$DATA_DIR"
+# Match Supervisor's root-owned, non-world-writable /data mount.
+chmod 755 "$DATA_DIR"
 
 remove_container() {
   if [[ "$ENGINE" == "podman" ]]; then
@@ -30,6 +28,8 @@ remove_container() {
 }
 
 cleanup() {
+  local result=$?
+  trap - EXIT
   set +e
   if [[ -n "${CONTAINER_STARTED:-}" && -n "${ENGINE:-}" ]]; then
     remove_container "$CONTAINER"
@@ -37,7 +37,16 @@ cleanup() {
   if [[ "$KEEP_IMAGE" != 1 && -n "${ENGINE:-}" ]]; then
     "$ENGINE" image rm "$IMAGE" >/dev/null 2>&1
   fi
-  rm -rf "$TMP_DIR"
+  if [[ "$ENGINE" == podman ]]; then
+    podman unshare rm -r -- "$TMP_DIR"
+  else
+    rm -r -- "$TMP_DIR"
+  fi
+  if [[ -e "$TMP_DIR" ]]; then
+    echo "smoke-test data cleanup failed: $TMP_DIR" >&2
+    result=1
+  fi
+  exit "$result"
 }
 trap cleanup EXIT
 
@@ -74,12 +83,12 @@ echo "building App image"
   "$ROOT_DIR/app"
 
 declared_user=$("$ENGINE" image inspect --format '{{.Config.User}}' "$IMAGE")
-[[ "$declared_user" == "65532:65532" ]] || {
+[[ "$declared_user" == "0:0" ]] || {
   echo "unexpected declared image user: $declared_user" >&2
   exit 1
 }
 
-echo "starting image as declared user $declared_user"
+echo "starting image with a root-only data preparation step"
 "$ENGINE" run --detach --name "$CONTAINER" \
   --publish 127.0.0.1::8099 \
   --volume "$DATA_DIR:/data:rw" \
@@ -161,16 +170,16 @@ status_code=$(request_code "$TMP_DIR/status.json" GET /v1/profile/status \
   exit 1
 }
 
-runtime_uid=$("$ENGINE" exec "$CONTAINER" id -u)
-runtime_gid=$("$ENGINE" exec "$CONTAINER" id -g)
+runtime_uid=$("$ENGINE" exec "$CONTAINER" awk '/^Uid:/ {print $2}' /proc/1/status)
+runtime_gid=$("$ENGINE" exec "$CONTAINER" awk '/^Gid:/ {print $2}' /proc/1/status)
 [[ "$runtime_uid" == 65532 && "$runtime_gid" == 65532 ]] || {
   echo "runtime identity is $runtime_uid:$runtime_gid, expected 65532:65532" >&2
   exit 1
 }
 
 # Reconciliation must persist sanitized profile state and leave the mounted data
-# directory writable to the declared non-root user.
-"$ENGINE" exec "$CONTAINER" python3 -c '
+# directory writable to the serving process after it drops privileges.
+"$ENGINE" exec --user 65532:65532 "$CONTAINER" python3 -c '
 from pathlib import Path
 import json
 

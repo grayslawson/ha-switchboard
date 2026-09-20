@@ -45,6 +45,17 @@ of any particular Home Assistant installation, CI host, or private network.
 Registry credentials used by automation must be narrowly scoped to the
 published package and must never be committed to the repository.
 
+Branch builds publish `latest` only. A matching `v<app/config.yaml version>`
+tag publishes the versioned image. The image carries the source revision label,
+and the GitHub mirror release waits for both architectures at that exact
+revision before creating its public tag and Release. Existing public release
+tags are not force-moved on reruns. These are release gates, not a substitute
+for a live Home Assistant canary.
+
+The App, Core, and Python package version in this checkout is `0.2.0`.
+A local version is not public-release evidence. Verify the matching tag,
+multi-architecture image, and GitHub Release before announcing availability.
+
 The OCI source label proves image provenance but does not by itself connect a
 package that was pushed with a personal access token to the GitHub repository.
 After the first GHCR publication, the package owner must use GitHub's package
@@ -53,42 +64,51 @@ sidebar may otherwise continue to show “No packages published” even while th
 public image and its tags are pullable. Do not delete and recreate the package
 just to change this association.
 
-Before requesting inclusion in HACS's default catalog, pass the HACS and
-Hassfest jobs in Forgejo, publish a full GitHub Release through the Forgejo
-mirror workflow (not only a tag), and submit the repository to the integration
-list in `hacs/default`. HACS requires the repository to be public on GitHub and
-a full GitHub Release to be available; a tag alone is not sufficient for the
-normal update flow.
+For a HACS **custom repository**, [GitHub Releases are optional](https://www.hacs.xyz/docs/publish/integration/):
+HACS can install the default branch. Before requesting inclusion in HACS's
+**default catalog**, publish a full GitHub Release, run and pass the public
+GitHub HACS and Hassfest Actions required by the
+[default repository rules](https://www.hacs.xyz/docs/publish/include/), and
+submit the repository to `hacs/default`. Private Forgejo jobs alone do not
+satisfy that public Actions requirement. Keep the custom-repository path until
+those gates are proven on the exported GitHub tree.
 
 When Docker/AppArmor is available, use the official Home Assistant Apps test
 harness (or an equivalent local harness), install the local `app/`, and
 verify:
 
 - Supervisor starts the App on `amd64` and `aarch64` declarations;
-- ingress reaches the gateway health/status surface;
+- browser ingress reaches the gateway UI and health/status surface;
 - AppArmor permits only the declared runtime behavior;
 - `/data` survives restart and App hot backup/restore;
 - empty options start without a provider credential; and
 - no App action copies files into Home Assistant `custom_components`.
 
-Ingress is Supervisor-only: the App gateway rejects every source address other
-than `172.30.32.2`. The standalone Compose path explicitly disables that
-Supervisor ingress restriction and must be protected by the user's own network
-boundary and gateway token.
+The browser UI is Supervisor-ingress-only (`172.30.32.2`). The companion Core
+integration reaches the gateway over the internal App network with a matching
+gateway bearer token; unauthenticated direct API calls are rejected. The
+standalone Compose path has no Supervisor ingress boundary and must be
+protected by the user's own network controls and token. Compose passes the Jev
+model, privacy mode, and separate fallback settings; its privacy default is
+`local_only`, so hosted Jev/fallback behavior requires an explicit privacy
+choice.
 
 The local test harness may require privileged Docker/AppArmor support. That is
-test infrastructure, not an App runtime permission. The App manifest must
-remain non-privileged, non-host-networked, and free of broad
-Supervisor/Home Assistant API access unless a separately reviewed feature
-changes that boundary.
+test infrastructure, not an App runtime permission. The source App manifest
+must remain non-privileged, non-host-networked, and free of broad Supervisor
+and Home Assistant API access unless a separately reviewed feature changes
+that boundary. The current runtime still uses Supervisor's scoped self-
+information and discovery endpoints for option loading and registration.
 
 ## Installation contract
 
 The user installs the App and companion integration independently. The
 integration owns Home Assistant credentials, entity IDs, event subscriptions,
-action execution, and post-action verification. The App receives only
-sanitized snapshots and opaque candidate IDs. A standalone Container install
-uses the same contract without Supervisor.
+action execution, parameter schemas, and post-action verification. The App
+receives only sanitized snapshots and opaque candidate IDs. The current Jev
+question set does not elicit action parameters; a compatible Jev service or
+adapter must supply typed values for parameterized controls. A standalone
+Container install uses the same contract without Supervisor.
 
 ## Evidence states
 
@@ -96,3 +116,9 @@ Passing unit tests and a local App build establish source/fixture validation;
 they do not establish a public release, an App repository review, or a live
 Home Assistant canary. Record those states separately before claiming release
 readiness.
+
+Local evidence must be reported as checkout/harness evidence, not public or
+live-install evidence. HACS installation/update behavior remains unverified
+until its public repository flow is exercised. Refresh or reinstall an App
+before treating a cached Supervisor manifest as proof of current source
+permissions.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import logging
 import os
 import socket
 import urllib.error
@@ -11,8 +12,16 @@ import urllib.request
 from typing import Any, Mapping, Protocol
 
 from .protocol import HandoffRequest, HandoffResponse, ModelRoute, ResponseKind
-from .redaction import SensitiveDataError, sanitize_for_gateway
+from .redaction import (
+    open_provider_url,
+    require_secure_provider_endpoint,
+    SensitiveDataError,
+    sanitize_for_gateway,
+)
 from .route_policy import RouteRegistry, compatible_failovers
+
+
+_LOG = logging.getLogger("ha_switchboard.handoff")
 
 
 class HandoffError(RuntimeError):
@@ -44,12 +53,21 @@ class HttpRouteAdapter:
 
     endpoints: Mapping[str, str]
     api_key_env: Mapping[str, str] | None = None
+    api_keys: Mapping[str, str] | None = None
     timeout: float = 5.0
 
     def invoke(self, route: ModelRoute, request: HandoffRequest) -> Mapping[str, Any]:
         endpoint = self.endpoints.get(route.route_id, "")
         if not endpoint:
             raise HandoffError(f"route {route.route_id} has no endpoint")
+        key = (self.api_keys or {}).get(route.route_id) or (
+            os.environ.get(env_name) if (env_name := (self.api_key_env or {}).get(route.route_id)) else ""
+        )
+        try:
+            require_secure_provider_endpoint(endpoint, has_credentials=bool(key), has_context=True)
+        except ValueError as exc:
+            _LOG.warning("event=provider_rejected provider=route reason=endpoint_policy")
+            raise HandoffError("provider endpoint is not allowed") from exc
         payload = {
             "handoff_id": request.handoff_id,
             "request_id": request.request_id,
@@ -62,9 +80,8 @@ class HttpRouteAdapter:
             "handoff_depth": request.handoff_depth,
         }
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
-        env_name = (self.api_key_env or {}).get(route.route_id)
-        if env_name and os.environ.get(env_name):
-            headers["Authorization"] = f"Bearer {os.environ[env_name]}"
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
         request_obj = urllib.request.Request(
             endpoint.rstrip("/"),
             data=json.dumps(payload, separators=(",", ":")).encode("utf-8"),
@@ -72,12 +89,17 @@ class HttpRouteAdapter:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request_obj, timeout=max(0.2, min(self.timeout, 15))) as response:
+            with open_provider_url(request_obj, timeout=max(0.2, min(self.timeout, 15))) as response:
                 decoded = json.loads(response.read(128_000))
-        except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
-            raise HandoffError(f"route {route.route_id} unavailable") from exc
+        except urllib.error.HTTPError as exc:
+            _LOG.warning("event=provider_http_error provider=route status=%d", exc.code)
+            raise HandoffError("provider request failed") from exc
+        except (urllib.error.URLError, TimeoutError, socket.timeout, OSError) as exc:
+            _LOG.warning("event=provider_transport_error provider=route error_type=%s", type(exc).__name__)
+            raise HandoffError("provider request failed") from exc
         if not isinstance(decoded, Mapping):
-            raise HandoffError(f"route {route.route_id} returned an invalid object")
+            _LOG.warning("event=provider_invalid_response provider=route reason=not_object")
+            raise HandoffError("provider returned an invalid object")
         return decoded
 
 

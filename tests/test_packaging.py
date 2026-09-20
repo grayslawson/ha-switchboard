@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
 
@@ -9,12 +10,38 @@ import pytest
 ROOT = Path(__file__).parents[1]
 
 
+def test_core_integration_binds_empty_config_schema_to_domain() -> None:
+    """Keep the integration compatible with current Home Assistant helpers."""
+
+    source = (ROOT / "custom_components" / "ha_switchboard" / "__init__.py").read_text(
+        encoding="utf-8"
+    )
+    module = ast.parse(source)
+    schema_assignments = [
+        node.value
+        for node in ast.walk(module)
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "CONFIG_SCHEMA" for target in node.targets)
+    ]
+
+    assert any(
+        isinstance(value, ast.Call)
+        and isinstance(value.func, ast.Attribute)
+        and value.func.attr == "empty_config_schema"
+        and len(value.args) == 1
+        and isinstance(value.args[0], ast.Name)
+        and value.args[0].id == "DOMAIN"
+        for value in schema_assignments
+    )
+
+
 def test_app_manifest_declares_portable_least_privilege_defaults() -> None:
     manifest = (ROOT / "app" / "config.yaml").read_text(encoding="utf-8")
     assert 'slug: "ha_switchboard"' in manifest
     assert "amd64" in manifest and "aarch64" in manifest
     assert "homeassistant_api: false" in manifest
-    assert "hassio_api: false" in manifest
+    # Scoped Supervisor API access is required for App discovery registration.
+    assert "hassio_api: true" in manifest
     assert "host_network: false" in manifest
     assert "privileged: []" in manifest
     # Supervisor expects this setting to be a boolean. The custom profile name
@@ -35,6 +62,10 @@ def test_app_entrypoint_is_executable_under_custom_apparmor_profile() -> None:
 
     assert entrypoint.stat().st_mode & 0o111
     assert "RUN chmod 0555 /run.sh" in dockerfile
+    assert "USER 0:0" in dockerfile
+    assert "_prepare_data_dir_and_drop_privileges" in (ROOT / "app" / "ha_switchboard" / "server.py").read_text(encoding="utf-8")
+    for rule in ("capability chown", "capability setgid", "capability setuid", "/data/ rw"):
+        assert rule in apparmor
     for rule in ("/run.sh rix", "/bin/sh rix", "/bin/busybox rix", "/usr/local/bin/python3 rix"):
         assert rule in apparmor
     for rule in (
@@ -61,3 +92,7 @@ def test_standalone_path_has_explicit_persistence_and_healthcheck() -> None:
     assert ":/data" in compose
     assert "healthcheck:" in compose
     assert "JEV_ENDPOINT" in compose
+    assert 'PRIVACY_MODE: "${PRIVACY_MODE:-local_only}"' in compose
+    assert 'FALLBACK_PROVIDER: "${FALLBACK_PROVIDER:-disabled}"' in compose
+    assert "FALLBACK_ENDPOINT" in compose
+    assert "FALLBACK_API_KEY" in compose

@@ -56,7 +56,7 @@ class Registry:
             raise ValueError(f"registry response was not an object: {path}")
         return payload, response.headers.get("Docker-Content-Digest")
 
-    def verify(self, tag: str, expected_architectures: set[str], source_url: str) -> str:
+    def verify(self, tag: str, expected_architectures: set[str], source_url: str, revision: str = "") -> str:
         prefix = f"/v2/{self.repository}"
         index, index_digest = self.json(
             f"{prefix}/manifests/{urllib.parse.quote(tag, safe='')}", MANIFEST_ACCEPT
@@ -93,6 +93,8 @@ class Registry:
             labels = config.get("config", {}).get("Labels", {})
             if not isinstance(labels, dict) or labels.get("org.opencontainers.image.source") != source_url:
                 raise ValueError(f"linux/{architecture} image has an unexpected source label")
+            if revision and labels.get("org.opencontainers.image.revision") != revision:
+                raise ValueError(f"linux/{architecture} image does not match source revision")
 
         missing = expected_architectures - found
         if missing:
@@ -107,6 +109,7 @@ def main() -> int:
     parser.add_argument("--image", required=True)
     parser.add_argument("--tag", required=True)
     parser.add_argument("--source-url", required=True)
+    parser.add_argument("--revision", default="")
     parser.add_argument("--username-env", default="GHCR_USERNAME")
     parser.add_argument("--token-env", default="GHCR_TOKEN")
     parser.add_argument("--architecture", action="append", default=["amd64", "arm64"])
@@ -116,7 +119,7 @@ def main() -> int:
     if not username or not token:
         raise SystemExit("registry username and token environment variables are required")
     Registry(args.image, username, token).verify(
-        args.tag, set(args.architecture), args.source_url
+        args.tag, set(args.architecture), args.source_url, args.revision
     )
     return 0
 

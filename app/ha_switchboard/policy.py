@@ -104,6 +104,14 @@ def validate_parameters(capability: Capability, parameters: Mapping[str, Any]) -
     if not isinstance(parameters, Mapping) or len(parameters) > 8:
         raise PolicyError("parameters must be a bounded object")
     schema = capability.parameter_schema
+    if not isinstance(schema, Mapping):
+        schema = {}
+    required = schema.get("required", ())
+    if not isinstance(required, (list, tuple)):
+        raise PolicyError("required parameter declaration is invalid")
+    missing = set(required) - set(parameters)
+    if missing:
+        raise PolicyError(f"missing parameters: {', '.join(sorted(missing))}")
     allowed = set(schema.get("properties", {})) if isinstance(schema, Mapping) else set()
     unknown = set(parameters) - allowed
     if unknown:

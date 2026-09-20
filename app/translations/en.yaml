@@ -1,0 +1,37 @@
+configuration:
+  ingress_only:
+    name: Restrict the Web UI to Home Assistant
+    description: Keep this on. It blocks direct access to the dashboard; Home Assistant's Open Web UI button still works.
+  gateway_mode:
+    name: Home Assistant connection mode
+    description: Keep Adapter only. The Core integration discovers devices and performs actions; supervisor_read_only is currently inert.
+  jev_endpoint:
+    name: Jev decision URL
+    description: Use https://openrouter.ai/api/alpha/decisions for OpenRouter Jev, or a compatible typed Jev service. This is not a chat-completions URL.
+  jev_model:
+    name: Jev model
+    description: Use typesafe/jev-1.13 for OpenRouter Decisions. A compatible custom Jev service may ignore this value.
+  jev_api_key:
+    name: Jev API key
+    description: Key for the Jev decision service. For OpenRouter Jev, enter your OpenRouter API key. This is never a Home Assistant token.
+  fallback_provider:
+    name: Fallback provider
+    description: Optional second model for requests Jev cannot complete. Disabled sends nothing to a fallback; OpenRouter uses a chat model; Typed HTTP requires a Switchboard-compatible proposal endpoint.
+  fallback_endpoint:
+    name: Fallback URL
+    description: OpenRouter defaults to its chat-completions URL when blank. For Typed HTTP, enter the URL of your compatible handoff service.
+  fallback_model:
+    name: Fallback model
+    description: OpenRouter chat-model ID to use for fallback requests. Required when the fallback provider is OpenRouter.
+  fallback_api_key:
+    name: Fallback API key
+    description: Key for the fallback service. This may be the same OpenRouter key as Jev, but it is configured separately.
+  gateway_token:
+    name: Core-to-App token
+    description: Long random token that protects the gateway API. Enter the same token in the HA Switchboard integration. This is not a model-provider key.
+  profile_refresh_minutes:
+    name: Full profile refresh interval
+    description: Minutes for the Core worker's complete profile refresh loop. Use Scan now for an explicit first scan while this wiring is completed.
+  privacy_mode:
+    name: Where requests may be sent
+    description: Local only blocks hosted services. Jev hosted allowed permits hosted Jev but no hosted fallback. Hosted allowed also permits an explicitly configured hosted fallback.

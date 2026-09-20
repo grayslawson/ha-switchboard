@@ -40,11 +40,15 @@ ALLOWED_FILES = frozenset(
         "tools/verify-ghcr-image.py",
     }
 )
-EXCLUDED_DIRECTORIES = frozenset({".devcontainer", ".forgejo", ".github"})
+EXCLUDED_DIRECTORIES = frozenset({".devcontainer", ".forgejo", ".github", ".vscode"})
 EXCLUDED_FILES = frozenset(
     {
         "docs/PUBLIC_REPOSITORY.md",
         "tools/ha-switchboard-export-public.py",
+        "tools/app-image-e2e.sh",
+        "tools/local-dev.sh",
+        "tests/test_e2e_harness.py",
+        "tests/test_release_workflows.py",
     }
 )
 
@@ -65,7 +69,11 @@ def is_allowed(path: PurePosixPath) -> bool:
 
 
 def is_excluded(path: PurePosixPath) -> bool:
-    return bool(path.parts and path.parts[0] in EXCLUDED_DIRECTORIES) or str(path) in EXCLUDED_FILES
+    return (
+        bool(path.parts and path.parts[0] in EXCLUDED_DIRECTORIES)
+        or path.parts[:2] == ("tools", "local-fixtures")
+        or str(path) in EXCLUDED_FILES
+    )
 
 
 def export(root: Path, destination: Path) -> list[str]:

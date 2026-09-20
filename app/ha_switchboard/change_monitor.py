@@ -11,6 +11,7 @@ from .protocol import HomeProfile, LifecycleStatus, SectionId
 
 
 EVENT_SECTIONS: dict[str, frozenset[SectionId]] = {
+    "homeassistant_started": frozenset(SectionId),
     "state_changed": frozenset({SectionId.ENTITIES}),
     "entity_registry_updated": frozenset({SectionId.ENTITIES, SectionId.EXPOSURE, SectionId.SERVICES}),
     "device_registry_updated": frozenset({SectionId.DEVICES, SectionId.ORGANIZATION}),

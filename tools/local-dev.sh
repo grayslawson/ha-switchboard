@@ -14,6 +14,33 @@ LOCAL_HA_URL="${HA_SWITCHBOARD_LOCAL_HA_URL:-http://127.0.0.1:7123/}"
 LOCAL_OBSERVER_URL="${HA_SWITCHBOARD_LOCAL_OBSERVER_URL:-http://127.0.0.1:7357/}"
 HACS_REPOSITORY_URL="https://github.com/hacs/addons"
 LOCAL_CORE_CONFIG_DIR="/mnt/supervisor/homeassistant"
+LOCAL_OPTIONS_FILE="$ROOT_DIR/.env.local"
+
+load_local_test_options() {
+  [[ -f "$LOCAL_OPTIONS_FILE" ]] || return 0
+  local line key value
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    if [[ ! "$line" =~ ^([A-Z_]+)=(.*)$ ]]; then
+      echo "Invalid local options line (expected NAME=value)." >&2
+      return 2
+    fi
+    key="${BASH_REMATCH[1]}"
+    value="${BASH_REMATCH[2]}"
+    case "$key" in
+      HA_SWITCHBOARD_JEV_ENDPOINT|HA_SWITCHBOARD_JEV_API_KEY|HA_SWITCHBOARD_GATEWAY_TOKEN|HA_SWITCHBOARD_PROFILE_REFRESH_MINUTES|HA_SWITCHBOARD_PRIVACY_MODE) ;;
+      *) echo "Unsupported local option name: $key" >&2; return 2 ;;
+    esac
+    if [[ "$value" == \"*\" || "$value" == \'*\' ]]; then
+      value="${value:1:${#value}-2}"
+    fi
+    # Explicitly exported values win; this parser never evaluates shell code.
+    if [[ ! -v "$key" ]]; then
+      export "$key=$value"
+    fi
+  done < "$LOCAL_OPTIONS_FILE"
+}
 
 usage() {
   cat <<'EOF'
@@ -26,6 +53,7 @@ Commands:
   wait        Wait for Supervisor and the local Home Assistant endpoints.
   store       Refresh the local App store and show HA Switchboard metadata.
   install     Install and start the locally built HA Switchboard App.
+  configure   Apply exported HA_SWITCHBOARD_* test options to the local App.
   start       Start the locally built HA Switchboard App.
   rebuild     Rebuild and restart the locally built App after source changes.
   install-hacs
@@ -35,12 +63,21 @@ Commands:
   e2e         Run the local Supervisor, Home Assistant, and App ingress checks.
   logs        Follow the local App logs.
   stop        Stop the local App.
-  down        Stop the devcontainer and its local Supervisor.
-  clean       Remove the disposable staging copy after stopping the container.
+  down        Remove the devcontainer only with HA_SWITCHBOARD_ALLOW_DEV_RESET=1.
+  clean       Remove the devcontainer and staging copy only with that guard.
 
 The staging copy is used because the release app/config.yaml intentionally
 contains image: ghcr.io/...; Home Assistant requires image: to be absent for
 local Supervisor builds. Source edits remain in the real worktree.
+
+For configure/e2e, these variables may be exported or placed as literal
+NAME=value lines in ignored .env.local (exported values win): HA_SWITCHBOARD_JEV_ENDPOINT,
+HA_SWITCHBOARD_JEV_API_KEY, HA_SWITCHBOARD_GATEWAY_TOKEN,
+HA_SWITCHBOARD_PROFILE_REFRESH_MINUTES, HA_SWITCHBOARD_PRIVACY_MODE.
+Values are passed through the process environment, never written to this tree.
+The Supervisor/Core data lives in a Docker volume. Removing the devcontainer
+can detach that volume and make a new local Home Assistant appear unconfigured.
+Take a verified volume snapshot before using down or clean.
 EOF
 }
 
@@ -81,6 +118,14 @@ remove_devcontainer() {
   container_id="$(devcontainer_id)"
   [[ -n "$container_id" ]] || return 0
   docker rm -f "$container_id" >/dev/null
+}
+
+require_dev_reset_guard() {
+  if [[ "${HA_SWITCHBOARD_ALLOW_DEV_RESET:-}" != "1" ]]; then
+    echo "Refusing to remove the devcontainer: its Supervisor/Core data is in a Docker volume." >&2
+    echo "Take a verified snapshot, then set HA_SWITCHBOARD_ALLOW_DEV_RESET=1 if removal is intentional." >&2
+    return 1
+  fi
 }
 
 wait_for_supervisor() {
@@ -164,6 +209,76 @@ wait_for_app_started() {
 
 install_app() {
   run_in_container sh -lc "set -e; ha store reload; result=\$(ha apps install --raw-json '$APP_SLUG'); if printf '%s\\n' \"\$result\" | jq -e '.result == \"error\" and .error_key != \"app_already_installed_error\"' >/dev/null; then printf '%s\\n' \"\$result\" >&2; exit 1; fi; ha apps start '$APP_SLUG'"
+}
+
+has_local_options_env() {
+  [[ -n "${HA_SWITCHBOARD_JEV_ENDPOINT:-}${HA_SWITCHBOARD_JEV_API_KEY:-}${HA_SWITCHBOARD_GATEWAY_TOKEN:-}${HA_SWITCHBOARD_PROFILE_REFRESH_MINUTES:-}${HA_SWITCHBOARD_PRIVACY_MODE:-}" ]]
+}
+
+configure_app() {
+  local container_id
+  container_id="$(devcontainer_id)"
+  [[ -n "$container_id" ]] || { echo "The local App devcontainer is not running." >&2; return 1; }
+  # Core has a scoped Supervisor token; only it can read the current options.
+  # Docker -e NAME forwards exported values without embedding secrets in this
+  # script, its arguments, or its output. The Core process is not restarted.
+  docker exec -i \
+    -e HA_SWITCHBOARD_JEV_ENDPOINT \
+    -e HA_SWITCHBOARD_JEV_API_KEY \
+    -e HA_SWITCHBOARD_GATEWAY_TOKEN \
+    -e HA_SWITCHBOARD_PROFILE_REFRESH_MINUTES \
+    -e HA_SWITCHBOARD_PRIVACY_MODE \
+    "$container_id" sh -lc '
+      docker exec -i \
+        -e HA_SWITCHBOARD_JEV_ENDPOINT \
+        -e HA_SWITCHBOARD_JEV_API_KEY \
+        -e HA_SWITCHBOARD_GATEWAY_TOKEN \
+        -e HA_SWITCHBOARD_PROFILE_REFRESH_MINUTES \
+        -e HA_SWITCHBOARD_PRIVACY_MODE \
+        homeassistant python3 -
+    ' <<'PY'
+import json
+import os
+from urllib.request import Request, urlopen
+
+base = "http://supervisor/addons/local_ha_switchboard"
+headers = {
+    "Authorization": "Bearer " + os.environ["SUPERVISOR_TOKEN"],
+    "Content-Type": "application/json",
+}
+with urlopen(Request(base + "/info", headers=headers), timeout=10) as response:
+    options = dict(json.load(response)["data"]["options"])
+
+names = {
+    "HA_SWITCHBOARD_JEV_ENDPOINT": "jev_endpoint",
+    "HA_SWITCHBOARD_JEV_API_KEY": "jev_api_key",
+    "HA_SWITCHBOARD_GATEWAY_TOKEN": "gateway_token",
+    "HA_SWITCHBOARD_PRIVACY_MODE": "privacy_mode",
+}
+for environment_name, option_name in names.items():
+    if value := os.environ.get(environment_name):
+        options[option_name] = value
+
+if minutes := os.environ.get("HA_SWITCHBOARD_PROFILE_REFRESH_MINUTES"):
+    value = int(minutes)
+    if not 1 <= value <= 1440:
+        raise ValueError("profile refresh minutes must be 1..1440")
+    options["profile_refresh_minutes"] = value
+
+if options.get("privacy_mode") not in {"local_only", "jev_hosted_allowed", "hosted_allowed"}:
+    raise ValueError("invalid privacy mode")
+if not options.get("gateway_token"):
+    raise ValueError("a gateway token is required for the Core integration")
+
+payload = json.dumps({"options": options}).encode()
+with urlopen(Request(base + "/options", data=payload, headers=headers, method="POST"), timeout=20) as response:
+    result = json.load(response)
+if result.get("result") != "ok":
+    raise RuntimeError("Supervisor rejected the local App options")
+print("Local App options applied without printing credentials.")
+PY
+  run_in_container ha apps restart "$APP_SLUG" >/dev/null
+  wait_for_app_started
 }
 
 hacs_repository_slug() {
@@ -252,7 +367,9 @@ install_hacs() {
 }
 
 sync_integration() {
-  [[ -d "$STAGE_DIR" ]] || sync_stage
+  # Always refresh the disposable copy. Otherwise integration edits made in
+  # the real worktree are silently absent once the stage directory exists.
+  sync_stage
   wait_for_supervisor
   # The variables below must expand inside the container, not on the host.
   # shellcheck disable=SC2016
@@ -282,6 +399,8 @@ sync_stage() {
   mkdir -p "$STAGE_DIR"
   rsync -a --delete \
     --exclude '.git' \
+    --exclude '.env' \
+    --exclude '.env.*' \
     --exclude '.pytest_cache' \
     --exclude '__pycache__' \
     --exclude '.venv' \
@@ -293,6 +412,10 @@ sync_stage() {
   sed -i '/^image: "ghcr\.io\/grayslawson\/ha-switchboard"$/s/^/# image: /' \
     "$STAGE_DIR/app/config.yaml"
 }
+
+case "${1:-help}" in
+  configure|e2e) load_local_test_options ;;
+esac
 
 case "${1:-help}" in
   check)
@@ -330,6 +453,10 @@ case "${1:-help}" in
     [[ -d "$STAGE_DIR" ]] || sync_stage
     install_hacs
     ;;
+  configure)
+    wait_for_supervisor
+    configure_app
+    ;;
   sync-integration)
     sync_integration
     ;;
@@ -340,8 +467,11 @@ case "${1:-help}" in
     wait_for_app_started
     ;;
   rebuild)
+    [[ -n "$(devcontainer_id)" ]] || {
+      echo "No existing devcontainer found; refusing to create a fresh Home Assistant during rebuild." >&2
+      exit 1
+    }
     sync_stage
-    run_devcontainer up --workspace-folder "$STAGE_DIR" --log-level info >/dev/null
     wait_for_supervisor
     run_in_container sh -lc "ha apps stop '$APP_SLUG' >/dev/null 2>&1 || true; ha apps rebuild --force '$APP_SLUG'; ha apps start '$APP_SLUG'"
     wait_for_app_started
@@ -357,6 +487,9 @@ case "${1:-help}" in
       install_app
     fi
     wait_for_app_started
+    if has_local_options_env; then
+      configure_app
+    fi
     wait_for_app_ingress
     echo "Local HA Switchboard E2E checks passed."
     ;;
@@ -369,11 +502,13 @@ case "${1:-help}" in
     run_in_container ha apps stop "$APP_SLUG"
     ;;
   down)
+    require_dev_reset_guard
     [[ -d "$STAGE_DIR" ]] || exit 0
     run_in_container sh -lc "ha apps stop '$APP_SLUG' >/dev/null 2>&1 || true" || true
     remove_devcontainer
     ;;
   clean)
+    require_dev_reset_guard
     [[ -d "$STAGE_DIR" ]] || exit 0
     run_in_container sh -lc "ha apps stop '$APP_SLUG' >/dev/null 2>&1 || true" || true
     remove_devcontainer

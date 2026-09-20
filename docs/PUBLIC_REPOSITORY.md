@@ -29,6 +29,10 @@ The App image is built by the private Forgejo workflow on the dedicated
 `ha-switchboard` runner and pushed directly to GHCR. GitHub does not rebuild
 the image or run release automation.
 
+The private source declares version `0.2.0`. Do not describe a source version
+as public without verifying its matching tag, multi-architecture image, and
+GitHub Release.
+
 ## GHCR package association
 
 The package at `ghcr.io/grayslawson/ha-switchboard` is public and is verified
@@ -51,3 +55,7 @@ operator notes, homelab configuration, and any future unallowlisted path. A
 new public file must be added to
 `tools/ha-switchboard-export-public.py` explicitly before it can be
 published.
+
+HACS status is separate from mirror status. The local HACS files may be
+present before HACS GitHub device authentication is complete; that does not
+prove that the exported repository can be installed or updated through HACS.

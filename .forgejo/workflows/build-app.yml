@@ -26,14 +26,62 @@ jobs:
       - name: Check out exact revision
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          # Release verification needs the complete tag history. The explicit
+          # master fetch below is still required because checkout does not
+          # necessarily create refs/remotes/origin/master for a tag event.
+          fetch-depth: 0
           persist-credentials: false
+
+      - name: Verify release tag is an ancestor of protected master
+        if: ${{ forgejo.ref_type == 'tag' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref_type="${FORGEJO_REF_TYPE:-${GITHUB_REF_TYPE:-}}"
+          ref_name="${FORGEJO_REF_NAME:-${GITHUB_REF_NAME:-}}"
+          test "$ref_type" = tag
+          test -n "$ref_name"
+          test "$ref_name" = "v${ref_name#v}"
+          git fetch --no-tags origin +refs/heads/master:refs/remotes/origin/master
+          tag_commit="$(git rev-parse "refs/tags/$ref_name^{commit}")"
+          master_ref=refs/remotes/origin/master
+          master_commit="$(git rev-parse "$master_ref^{commit}")"
+          git merge-base --is-ancestor "$tag_commit" "$master_ref"
+          echo "release tag $ref_name ($tag_commit) is on protected master ($master_commit)"
+
+      - name: Verify release source versions are consistent
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import re
+          import tomllib
+          from pathlib import Path
+
+          root = Path.cwd()
+          config = (root / "app/config.yaml").read_text(encoding="utf-8")
+          package = (root / "app/ha_switchboard/__init__.py").read_text(encoding="utf-8")
+          dockerfile = (root / "app/Dockerfile").read_text(encoding="utf-8")
+          manifest = json.loads((root / "custom_components/ha_switchboard/manifest.json").read_text(encoding="utf-8"))
+          project = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+          values = {
+              "app/config.yaml": re.search(r"^version:\s*[\"']?([^\"'\s]+)", config, re.MULTILINE).group(1),
+              "app/ha_switchboard/__init__.py": re.search(r"^__version__\s*=\s*[\"']([^\"']+)[\"']", package, re.MULTILINE).group(1),
+              "app/Dockerfile": re.search(r"^ARG BUILD_VERSION=([^\s]+)", dockerfile, re.MULTILINE).group(1),
+              "custom_components/ha_switchboard/manifest.json": manifest["version"],
+              "pyproject.toml": project["project"]["version"],
+          }
+          if len(set(values.values())) != 1:
+              raise SystemExit("release source version mismatch: " + ", ".join(f"{path}={value}" for path, value in values.items()))
+          print(f"release source version consistent: {next(iter(values.values()))}")
+          PY
 
       - name: Verify builder prerequisites
         run: |
           set -eu
           runner_home="$(getent passwd "$(id -u)" | cut -d: -f6)"
-          export HOME="$runner_home"
+          test -d "$runner_home"
           command -v podman
           command -v python3
           command -v curl
@@ -49,8 +97,10 @@ jobs:
           set -euo pipefail
           version="$(sed -n 's/^version: *"\?\([0-9][0-9.]*\)"\?$/\1/p' app/config.yaml)"
           test -n "$version"
-          if [[ "${FORGEJO_REF_TYPE:-branch}" == "tag" ]]; then
-            test "${FORGEJO_REF_NAME#v}" = "$version"
+          ref_type="${FORGEJO_REF_TYPE:-${GITHUB_REF_TYPE:-branch}}"
+          ref_name="${FORGEJO_REF_NAME:-${GITHUB_REF_NAME:-}}"
+          if [[ "$ref_type" == "tag" ]]; then
+            test "${ref_name#v}" = "$version"
           fi
           printf 'value=%s\n' "$version" >> "$FORGEJO_OUTPUT"
 
@@ -73,15 +123,21 @@ jobs:
           podman manifest rm "$manifest" >/dev/null 2>&1 || true
           podman manifest create "$manifest"
           for arch in amd64 arm64; do
+            hass_arch="$arch"
+            if [[ "$arch" == arm64 ]]; then
+              hass_arch=aarch64
+            fi
             podman build \
               --platform "linux/${arch}" \
               --manifest "$manifest" \
               --build-arg "BUILD_VERSION=${VERSION}" \
-              --build-arg "BUILD_ARCH=${arch}" \
+              --build-arg "BUILD_ARCH=${hass_arch}" \
+              --build-arg "BUILD_REVISION=${GITHUB_SHA}" \
               app
           done
 
       - name: Push versioned multi-architecture image
+        if: ${{ forgejo.ref_type == 'tag' }}
         env:
           VERSION: ${{ steps.version.outputs.value }}
         run: |
@@ -107,14 +163,14 @@ jobs:
           VERSION: ${{ steps.version.outputs.value }}
         run: |
           set -euo pipefail
+          ref_type="${FORGEJO_REF_TYPE:-${GITHUB_REF_TYPE:-branch}}"
+          if [ "$ref_type" = "tag" ]; then
+            published_tag="$VERSION"
+          else
+            published_tag=latest
+          fi
           python3 tools/verify-ghcr-image.py \
             --image "${IMAGE}" \
-            --tag "${VERSION}" \
-            --source-url "https://github.com/grayslawson/ha-switchboard"
-          ref_type="${FORGEJO_REF_TYPE:-${GITHUB_REF_TYPE:-branch}}"
-          if [ "$ref_type" = "branch" ]; then
-            python3 tools/verify-ghcr-image.py \
-              --image "${IMAGE}" \
-              --tag latest \
-              --source-url "https://github.com/grayslawson/ha-switchboard"
-          fi
+            --tag "$published_tag" \
+            --source-url "https://github.com/grayslawson/ha-switchboard" \
+            --revision "${GITHUB_SHA}"

@@ -338,6 +338,7 @@ class JevDecision:
     risk: RiskClass = RiskClass.ROUTINE
     requires_confirmation: bool = False
     reason: str = ""
+    parameters: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not 0 <= self.confidence <= 1 or not 0 <= self.ambiguity <= 1:
@@ -346,6 +347,7 @@ class JevDecision:
             _bounded_text(self.capability_id, "capability_id", 128)
         if self.reason:
             _bounded_text(self.reason, "reason", 256)
+        _bounded_list(list(self.parameters), "parameters", 8)
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> "JevDecision":
@@ -358,6 +360,7 @@ class JevDecision:
             risk=RiskClass(payload.get("risk", RiskClass.ROUTINE)),
             requires_confirmation=bool(payload.get("requires_confirmation", False)),
             reason=str(payload.get("reason", "")),
+            parameters=dict(payload.get("parameters", {})),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -372,12 +375,19 @@ class DecisionResult:
     policy_revision: str
     response_key: str
     capability_id: str | None = None
+    capability_ids: tuple[str, ...] = ()
     route_id: str | None = None
     complexity: Complexity | None = None
     confidence: float | None = None
     handoff_id: str | None = None
     error_code: str | None = None
     text: str | None = None
+    parameters: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        _bounded_list(list(self.capability_ids), "capability_ids", 32)
+        if len(set(self.capability_ids)) != len(self.capability_ids):
+            raise ValueError("capability_ids must be unique")
 
     def to_dict(self) -> dict[str, Any]:
         return _json_value(self)

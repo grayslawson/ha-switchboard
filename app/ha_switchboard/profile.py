@@ -61,15 +61,29 @@ def _risk(entity: Mapping[str, Any]) -> RiskClass:
 
 
 def _parameter_schema(entity: Mapping[str, Any], operation: str) -> dict[str, Any]:
+    schemas = entity.get("parameter_schemas")
+    if isinstance(schemas, Mapping):
+        provided = schemas.get(operation)
+        if isinstance(provided, Mapping):
+            return dict(provided)
     provided = entity.get("parameter_schema")
     if isinstance(provided, Mapping):
         return dict(provided)
     if operation == "set_brightness":
-        return {"properties": {"brightness": {"type": "number", "minimum": 0, "maximum": 100}}}
+        return {
+            "required": ["brightness"],
+            "properties": {"brightness": {"type": "number", "minimum": 0, "maximum": 100}},
+        }
     if operation == "set_volume":
-        return {"properties": {"volume": {"type": "number", "minimum": 0, "maximum": 1}}}
+        return {
+            "required": ["volume"],
+            "properties": {"volume": {"type": "number", "minimum": 0, "maximum": 1}},
+        }
     if operation == "set_temperature":
-        return {"properties": {"temperature": {"type": "number", "minimum": 5, "maximum": 35}}}
+        return {
+            "required": ["temperature"],
+            "properties": {"temperature": {"type": "number", "minimum": 5, "maximum": 35}},
+        }
     return {"properties": {}}
 
 

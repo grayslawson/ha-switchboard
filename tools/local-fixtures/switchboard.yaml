@@ -1,0 +1,218 @@
+# Local-only Home Assistant package. All actuators use in-memory helpers.
+input_boolean:
+  switchboard_fixture_light_power:
+    name: Switchboard Fixture Light Power
+  switchboard_fixture_lamp_power:
+    name: Switchboard Fixture Lamp Power
+  switchboard_fixture_switch_power:
+    name: Switchboard Fixture Switch Power
+  switchboard_fixture_fan_power:
+    name: Switchboard Fixture Fan Power
+  switchboard_fixture_cover_open:
+    name: Switchboard Fixture Cover Open
+  switchboard_fixture_heater_power:
+    name: Switchboard Fixture Heater Power
+  switchboard_fixture_motion:
+    name: Switchboard Fixture Motion
+  switchboard_fixture_lock_closed:
+    name: Switchboard Fixture Lock Closed
+
+input_number:
+  switchboard_fixture_brightness:
+    name: Switchboard Fixture Brightness
+    min: 0
+    max: 255
+    step: 1
+  switchboard_fixture_temperature:
+    name: Switchboard Fixture Temperature
+    min: 5
+    max: 35
+    step: 0.5
+    unit_of_measurement: °C
+  switchboard_fixture_volume:
+    name: Switchboard Fixture Volume
+    min: 0
+    max: 1
+    step: 0.01
+
+input_select:
+  switchboard_fixture_media_state:
+    name: Switchboard Fixture Media State
+    options:
+      - "off"
+      - idle
+      - playing
+      - paused
+    initial: "off"
+
+template:
+  - light:
+      - name: Switchboard Fixture Light
+        unique_id: switchboard_fixture_light
+        state: "{{ is_state('input_boolean.switchboard_fixture_light_power', 'on') }}"
+        level: "{{ states('input_number.switchboard_fixture_brightness') | int(0) }}"
+        turn_on:
+          - action: input_boolean.turn_on
+            target:
+              entity_id: input_boolean.switchboard_fixture_light_power
+        turn_off:
+          - action: input_boolean.turn_off
+            target:
+              entity_id: input_boolean.switchboard_fixture_light_power
+        set_level:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.switchboard_fixture_brightness
+            data:
+              value: "{{ brightness }}"
+          - action: input_boolean.turn_on
+            target:
+              entity_id: input_boolean.switchboard_fixture_light_power
+      - name: Switchboard Fixture Lamp
+        unique_id: switchboard_fixture_lamp
+        state: "{{ is_state('input_boolean.switchboard_fixture_lamp_power', 'on') }}"
+        turn_on:
+          action: input_boolean.turn_on
+          target:
+            entity_id: input_boolean.switchboard_fixture_lamp_power
+        turn_off:
+          action: input_boolean.turn_off
+          target:
+            entity_id: input_boolean.switchboard_fixture_lamp_power
+    switch:
+      - name: Switchboard Fixture Switch
+        unique_id: switchboard_fixture_switch
+        state: "{{ is_state('input_boolean.switchboard_fixture_switch_power', 'on') }}"
+        turn_on:
+          action: input_boolean.turn_on
+          target:
+            entity_id: input_boolean.switchboard_fixture_switch_power
+        turn_off:
+          action: input_boolean.turn_off
+          target:
+            entity_id: input_boolean.switchboard_fixture_switch_power
+      - name: Switchboard Fixture Heater
+        unique_id: switchboard_fixture_heater
+        state: "{{ is_state('input_boolean.switchboard_fixture_heater_power', 'on') }}"
+        turn_on:
+          action: input_boolean.turn_on
+          target:
+            entity_id: input_boolean.switchboard_fixture_heater_power
+        turn_off:
+          action: input_boolean.turn_off
+          target:
+            entity_id: input_boolean.switchboard_fixture_heater_power
+    fan:
+      - name: Switchboard Fixture Fan
+        unique_id: switchboard_fixture_fan
+        state: "{{ is_state('input_boolean.switchboard_fixture_fan_power', 'on') }}"
+        turn_on:
+          action: input_boolean.turn_on
+          target:
+            entity_id: input_boolean.switchboard_fixture_fan_power
+        turn_off:
+          action: input_boolean.turn_off
+          target:
+            entity_id: input_boolean.switchboard_fixture_fan_power
+    cover:
+      - name: Switchboard Fixture Cover
+        unique_id: switchboard_fixture_cover
+        state: "{{ 'open' if is_state('input_boolean.switchboard_fixture_cover_open', 'on') else 'closed' }}"
+        open_cover:
+          action: input_boolean.turn_on
+          target:
+            entity_id: input_boolean.switchboard_fixture_cover_open
+        close_cover:
+          action: input_boolean.turn_off
+          target:
+            entity_id: input_boolean.switchboard_fixture_cover_open
+    lock:
+      - name: Switchboard Fixture Lock
+        unique_id: switchboard_fixture_lock
+        state: "{{ is_state('input_boolean.switchboard_fixture_lock_closed', 'on') }}"
+        lock:
+          action: input_boolean.turn_on
+          target:
+            entity_id: input_boolean.switchboard_fixture_lock_closed
+        unlock:
+          action: input_boolean.turn_off
+          target:
+            entity_id: input_boolean.switchboard_fixture_lock_closed
+    sensor:
+      - name: Switchboard Fixture Temperature Reading
+        unique_id: switchboard_fixture_temperature_reading
+        unit_of_measurement: °C
+        state: "{{ states('input_number.switchboard_fixture_temperature') }}"
+    binary_sensor:
+      - name: Switchboard Fixture Motion
+        unique_id: switchboard_fixture_motion_sensor
+        state: "{{ is_state('input_boolean.switchboard_fixture_motion', 'on') }}"
+
+climate:
+  - platform: generic_thermostat
+    name: Switchboard Fixture Thermostat
+    unique_id: switchboard_fixture_thermostat
+    heater: switch.switchboard_fixture_heater
+    target_sensor: sensor.switchboard_fixture_temperature_reading
+    min_temp: 5
+    max_temp: 35
+    target_temp: 20
+    initial_hvac_mode: "off"
+
+media_player:
+  - platform: universal
+    name: Switchboard Fixture Player
+    unique_id: switchboard_fixture_player
+    state_template: "{{ states('input_select.switchboard_fixture_media_state') }}"
+    attributes:
+      volume_level: input_number.switchboard_fixture_volume
+    commands:
+      turn_on:
+        action: input_select.select_option
+        target:
+          entity_id: input_select.switchboard_fixture_media_state
+        data:
+          option: idle
+      turn_off:
+        action: input_select.select_option
+        target:
+          entity_id: input_select.switchboard_fixture_media_state
+        data:
+          option: "off"
+      media_play:
+        action: input_select.select_option
+        target:
+          entity_id: input_select.switchboard_fixture_media_state
+        data:
+          option: playing
+      media_pause:
+        action: input_select.select_option
+        target:
+          entity_id: input_select.switchboard_fixture_media_state
+        data:
+          option: paused
+      media_stop:
+        action: input_select.select_option
+        target:
+          entity_id: input_select.switchboard_fixture_media_state
+        data:
+          option: idle
+      volume_set:
+        action: input_number.set_value
+        target:
+          entity_id: input_number.switchboard_fixture_volume
+        data:
+          value: "{{ volume_level }}"
+
+script:
+  switchboard_fixture_evening:
+    alias: Switchboard Fixture Evening
+    sequence:
+      - action: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.switchboard_fixture_light_power
+
+scene:
+  - name: Switchboard Fixture Calm
+    entities:
+      input_boolean.switchboard_fixture_light_power: "off"

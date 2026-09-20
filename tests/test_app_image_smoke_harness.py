@@ -19,8 +19,17 @@ def test_local_app_smoke_harness_is_checked_in_and_scoped() -> None:
     assert ".forgejo/workflows" not in text
 
 
-def test_app_smoke_uses_declared_non_root_identity() -> None:
+def test_app_smoke_proves_non_root_server_on_supervisor_like_mount() -> None:
     text = HARNESS.read_text(encoding="utf-8")
     assert "{{.Config.User}}" in text
     assert "65532:65532" in text
-    assert "id -u" in text and "id -g" in text
+    assert "chmod 755" in text
+    assert "/proc/1/status" in text
+    assert "exec --user 65532:65532" in text
+
+
+def test_smoke_harness_cleans_rootless_volume_and_fails_if_it_cannot() -> None:
+    text = HARNESS.read_text(encoding="utf-8")
+    assert 'podman unshare rm -r -- "$TMP_DIR"' in text
+    assert 'if [[ -e "$TMP_DIR" ]]' in text
+    assert "result=1" in text
