@@ -2,7 +2,7 @@
 
 **Review date:** 2026-09-20
 **Worktree:** `ha-switchboard-ci-hardening`
-**Reviewed revision:** `1ccb6ce2ba5e162249f4f15847280763aee4fb9e`
+**Reviewed revision:** `82077cd233b028ea7cd1c8dd817e8014a43353dd`
 (current source revision)
 **Scope:** This note records the current Spec Kit convergence boundary. The
 primary runtime, test, workflow, fixture, and user-document changes remain
@@ -63,7 +63,7 @@ evidence.
 - `tools/local-dev.sh` preserves the local Supervisor/Core volume by default;
   reset is guarded by a verified snapshot and explicit confirmation.
 - Supervisor discovery retry is bounded and reuses a sanitized payload.
-- Latest full pytest result at the reviewed revision: `459 passed, 4 skipped`.
+- Latest full pytest result at the reviewed revision: `464 passed, 4 skipped`.
   The skips require the absent Home Assistant runtime/config-flow dependency
   in the host worktree and the two opt-in live fixture probes; they are not
   source or live proof by themselves.

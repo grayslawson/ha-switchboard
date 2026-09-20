@@ -1,7 +1,7 @@
 # HA Switchboard 0.2.0 requirements traceability
 
 **Review date:** 2026-09-20
-**Reviewed revision:** `1ccb6ce2ba5e162249f4f15847280763aee4fb9e` on
+**Reviewed revision:** `82077cd233b028ea7cd1c8dd817e8014a43353dd` on
 `codex/fix-apparmor-runtime`
 **Purpose:** distinguish behavior present in source and focused tests from the
 future-completeness target described by `spec.md`, `plan.md`, and the contract
@@ -48,7 +48,7 @@ The current checkout has focused source/test evidence for these safe boundaries:
   `tests/test_server.py::test_supervisor_discovery_retry_is_bounded` cover the
   source-level behavior.
 
-The latest full repository test run on 2026-09-20 was `459 passed, 4 skipped`. The
+The latest full repository test run on 2026-09-20 was `464 passed, 4 skipped`. The
 skips were the Home Assistant config-flow/runtime tests because the
 `homeassistant` package is not installed in this host worktree; they are not
 source-test proof. A separate read-only check of the preserved local
