@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
+import urllib.error
 
 import pytest
 
@@ -78,6 +80,45 @@ def test_unknown_choice_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     with pytest.raises(OpenRouterFallbackInvalidResponse):
         OpenRouterFallbackAdapter().invoke(None, _request())
+
+
+def test_raw_reference_is_rejected_before_transport(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("urllib.request.urlopen", lambda *_args, **_kwargs: pytest.fail("must not call provider"))
+    request = replace(
+        _request(),
+        relevant_facts=({"capability_id": "cap-light-a", "entity_id": "fixture.light"},),
+    )
+    with pytest.raises(OpenRouterFallbackInvalidResponse, match="not sanitized"):
+        OpenRouterFallbackAdapter().invoke(None, request)
+
+
+def test_transient_failures_are_bounded_and_non_retryable_http_is_not_retried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    def timeout(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise TimeoutError()
+
+    monkeypatch.setattr("urllib.request.urlopen", timeout)
+    monkeypatch.setattr("ha_switchboard.openrouter_fallback.time.sleep", lambda _delay: None)
+    with pytest.raises(OpenRouterFallbackUnavailable):
+        OpenRouterFallbackAdapter().invoke(None, _request())
+    assert calls == 3
+
+    calls = 0
+
+    def unauthorized(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise urllib.error.HTTPError("https://provider.invalid", 401, "unauthorized", {}, None)
+
+    monkeypatch.setattr("urllib.request.urlopen", unauthorized)
+    with pytest.raises(OpenRouterFallbackUnavailable):
+        OpenRouterFallbackAdapter().invoke(None, _request(handoff_id="handoff-unauthorized"))
+    assert calls == 1
 
 
 def test_repeated_handoff_and_non_https_are_rejected() -> None:

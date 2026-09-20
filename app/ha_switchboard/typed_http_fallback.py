@@ -23,6 +23,7 @@ MAX_REQUEST_BYTES = 32_000
 MAX_RESPONSE_BYTES = 32_000
 MAX_API_KEY = 512
 MAX_ENDPOINT = 2_048
+FALLBACK_CONTRACT = "ha-switchboard-fallback/v1"
 _RETRY_POLICY = RetryPolicy(attempts=2, base_delay=0.25, max_delay=2.0)
 _RETRYABLE_HTTP_STATUS = frozenset({408, 429, 500, 502, 503, 504})
 
@@ -130,7 +131,9 @@ class TypedHttpFallbackAdapter:
             clean = sanitize_for_gateway(decoded)
         except SensitiveDataError as exc:
             raise TypedHttpFallbackInvalidResponse("typed fallback response contains sensitive data") from exc
-        if set(clean) - {"handoff_id", "route_id", "handoff_depth", "kind", "text", "proposals"}:
+        if clean.get("contract", FALLBACK_CONTRACT) != FALLBACK_CONTRACT:
+            raise TypedHttpFallbackInvalidResponse("typed fallback response has an unsupported contract")
+        if set(clean) - {"contract", "handoff_id", "route_id", "handoff_depth", "kind", "text", "proposals"}:
             raise TypedHttpFallbackInvalidResponse("typed fallback response contains unsupported fields")
         if clean.get("handoff_id") != request.handoff_id or clean.get("route_id", route.route_id) != route.route_id:
             raise TypedHttpFallbackInvalidResponse("typed fallback response identity mismatch")

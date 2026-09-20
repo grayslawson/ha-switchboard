@@ -40,9 +40,12 @@ ALLOWED_FILES = frozenset(
         "tools/verify-ghcr-image.py",
     }
 )
-EXCLUDED_DIRECTORIES = frozenset({".devcontainer", ".forgejo", ".github", ".vscode"})
+EXCLUDED_DIRECTORIES = frozenset(
+    {".agents", ".devcontainer", ".forgejo", ".github", ".specify", ".vscode", "specs"}
+)
 EXCLUDED_FILES = frozenset(
     {
+        "AGENTS.md",
         "docs/PUBLIC_REPOSITORY.md",
         "tools/ha-switchboard-export-public.py",
         "tools/app-image-e2e.sh",

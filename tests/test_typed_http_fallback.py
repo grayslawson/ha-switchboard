@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -11,6 +12,8 @@ from ha_switchboard.typed_http_fallback import (
     TypedHttpFallbackInvalidResponse,
     TypedHttpFallbackUnavailable,
 )
+
+FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def _route() -> ModelRoute:
@@ -66,6 +69,39 @@ def test_typed_contract_sends_only_sanitized_opaque_context(monkeypatch: pytest.
     assert isinstance(payload, dict)
     assert payload["contract"] == "ha-switchboard-fallback/v1"
     assert "entity_id" not in json.dumps(payload)
+
+
+def test_typed_fixture_proposal_preserves_only_typed_parameters(monkeypatch: pytest.MonkeyPatch) -> None:
+    fixture = json.loads((FIXTURES / "downstream-responses.json").read_text(encoding="utf-8"))["typed-http-proposal"]
+    monkeypatch.setattr("urllib.request.urlopen", lambda *_args, **_kwargs: _Response(fixture))
+
+    result = TypedHttpFallbackAdapter("http://local-reasoner:8090/decide").invoke(_route(), _request())
+
+    assert result["kind"] == "tool_proposal"
+    assert result["proposals"] == fixture["proposals"]
+    assert "entity_id" not in json.dumps(result)
+    assert "service" not in json.dumps(result)
+
+
+def test_typed_fixture_raw_service_json_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    fixture = json.loads((FIXTURES / "downstream-responses.json").read_text(encoding="utf-8"))["invalid-service-json"]
+    monkeypatch.setattr("urllib.request.urlopen", lambda *_args, **_kwargs: _Response(fixture))
+
+    with pytest.raises(TypedHttpFallbackInvalidResponse, match="sensitive"):
+        TypedHttpFallbackAdapter("http://local-reasoner:8090/decide").invoke(_route(), _request())
+
+
+def test_typed_contract_marker_must_match(monkeypatch: pytest.MonkeyPatch) -> None:
+    response = {
+        "contract": "other-contract/v1",
+        "handoff_id": "handoff-fixture",
+        "kind": "prose_response",
+        "text": "ok",
+    }
+    monkeypatch.setattr("urllib.request.urlopen", lambda *_args, **_kwargs: _Response(response))
+
+    with pytest.raises(TypedHttpFallbackInvalidResponse, match="unsupported contract"):
+        TypedHttpFallbackAdapter("http://local-reasoner:8090/decide").invoke(_route(), _request())
 
 
 def test_raw_reference_is_rejected_before_transport(monkeypatch: pytest.MonkeyPatch) -> None:

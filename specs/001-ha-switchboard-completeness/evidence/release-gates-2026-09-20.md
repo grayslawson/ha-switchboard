@@ -94,3 +94,30 @@ the pre-publication App image E2E through a 300-second timeout with a
 10-second kill grace period. These are local source/workflow gates only; T149
 and T151 remain pending for matching public mirror/tag/GHCR/HACS and installed
 App/Core canary evidence.
+
+## Follow-up public acceptance audit — current worktree
+
+At `HEAD bd38f47486af5ffad16e03809179b384406a444d`, the bounded package/public
+checks produced these sanitized results:
+
+- `python3 tools/ha-switchboard-export-public.py "$EXPORT_DIR"` passed with
+  202 tracked source files examined and 125 regular files exported.
+- `python3 tools/check_release_boundary.py --root "$EXPORT_DIR"` passed. The
+  exporter now explicitly excludes private `.agents/`, `.specify/`, `specs/`,
+  and `AGENTS.md` paths that had caused the prior fail-closed export rejection.
+- `python3 -m pytest -q tests/test_release_boundary.py
+  tests/test_release_acceptance.py tests/test_release_workflows.py` passed:
+  `22 passed`.
+- `actionlint -config-file .github/actionlint.yaml
+  .forgejo/workflows/*.yml` passed with no diagnostics.
+- Static HACS metadata/structure validation passed: exactly one integration,
+  required HACS manifest keys, `hacs.json`, repository URL, and brand icon.
+  This is not HACS acceptance.
+- The exact pinned Hassfest invocation passed against the read-only export:
+  `timeout --kill-after=10s 180s podman run --rm --workdir /github/workspace
+  --volume "$EXPORT_DIR:/github/workspace:ro"
+  ghcr.io/home-assistant/hassfest@sha256:66b55a8ce14cdcf0c200dd4dab1f3228ac8d3f6e0404ec710d8a79b296eba4` —
+  exit `0`; `Integrations: 1`; `Invalid integrations: 0`.
+
+The HACS token/public-repository gate,
+public mirror/tag/GHCR provenance, and installed App/Core canary remain open.

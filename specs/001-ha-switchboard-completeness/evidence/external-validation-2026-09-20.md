@@ -1,6 +1,7 @@
 # T149 External Validation Worker Evidence — 2026-09-20
 
-Status: **partial; Hassfest passed locally, HACS remains pending**. This
+Status: **partial; public export and static HACS shape passed, while Hassfest
+and HACS acceptance remain pending**. This
 worker performed bounded read-only validation of the current checkout's
 public export. It did not publish, push, tag, authenticate to, or mutate an
 external repository, and it did not use or record credentials.
@@ -9,7 +10,7 @@ external repository, and it did not use or record credentials.
 
 - Worktree: `/home/deploy/.local/state/pd-nixos/worktrees/ha-switchboard-ci-hardening`.
 - Branch: `codex/fix-apparmor-runtime`.
-- `HEAD`: `fcff6e86e729f34d4d01201cafebe3bf86f9cddd`.
+- `HEAD`: `bd38f47486af5ffad16e03809179b384406a444d`.
 - The worktree was already dirty across workflows, source, tests, and
   specifications. Those changes were preserved. This worker owns only this
   evidence file.
@@ -21,8 +22,8 @@ external repository, and it did not use or record credentials.
 
 | Check | Result | Exact command and sanitized result |
 | --- | --- | --- |
-| Public export | passed | `python3 tools/ha-switchboard-export-public.py "$EXPORT_DIR"` — `public export: PASS (109 tracked files)`. The temporary export contained 90 regular files after the exporter exclusions. |
-| Export boundary | passed | `python3 "$EXPORT_DIR/tools/check_release_boundary.py" --root "$EXPORT_DIR"` — `release boundary: PASS`; `.forgejo` and `.github` were absent from the export. |
+| Public export | passed | `python3 tools/ha-switchboard-export-public.py "$EXPORT_DIR"` — `public export: PASS (202 tracked files)`. The temporary export contained 125 regular files after the explicit private-path exclusions. |
+| Export boundary | passed | `python3 tools/check_release_boundary.py --root "$EXPORT_DIR"` — `release boundary: PASS`; `.agents`, `.forgejo`, `.github`, `.specify`, `specs`, and `AGENTS.md` were absent from the export. |
 | Local HACS-shaped metadata | passed | A read-only Python check parsed `hacs.json`, `repository.yaml`, and `custom_components/ha_switchboard/manifest.json`, verified one integration and the required manifest keys — `metadata/structure: PASS`. This is static metadata evidence only, not HACS validation. |
 | Working-tree whitespace | passed | `git diff --check` — exit `0`. |
 
@@ -80,3 +81,24 @@ References:
 
 No workflow, source, task, existing evidence file, external repository, or
 Home Assistant environment was changed by this worker.
+
+## Current-worktree reconciliation
+
+The current audit supersedes the older baseline above at `HEAD
+bd38f47486af5ffad16e03809179b384406a444d`:
+
+- The exporter now passes with `public export: PASS (202 tracked files)` and
+  125 regular files in the temporary export. The exported-tree boundary also
+  passes, with `.agents`, `.forgejo`, `.github`, `.specify`, `specs`, and
+  `AGENTS.md` absent.
+- Static HACS metadata/structure validation passes for exactly one integration,
+  the required manifest keys, `hacs.json`, the repository URL, and the brand
+  icon. This is not HACS acceptance; the official HACS action was not invoked
+  because its token/public-repository gate remains intentionally open.
+- The exact pinned Hassfest invocation was run against the read-only export:
+  `timeout --kill-after=10s 180s podman run --rm --workdir
+  /github/workspace --volume "$EXPORT_DIR:/github/workspace:ro"
+  ghcr.io/home-assistant/hassfest@sha256:66b55a8ce14cdcf0c200dd4dab1f3228ac8d3f6e0404ec710d8a79b296eba4` —
+  exit `0`; `Integrations: 1`; `Invalid integrations: 0`.
+
+The current local result therefore does not claim Hassfest or HACS acceptance.

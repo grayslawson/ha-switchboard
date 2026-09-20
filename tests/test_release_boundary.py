@@ -41,18 +41,25 @@ def test_public_export_omits_private_forgejo_workflows(tmp_path: Path) -> None:
     source = tmp_path / "source"
     destination = tmp_path / "public"
     (source / ".forgejo" / "workflows").mkdir(parents=True)
+    (source / ".agents").mkdir()
     (source / ".devcontainer").mkdir()
     (source / ".github").mkdir()
+    (source / ".specify").mkdir()
+    (source / "specs").mkdir()
     (source / ".vscode").mkdir()
     (source / "docs").mkdir()
     (source / "tools").mkdir()
     (source / "tools" / "local-fixtures").mkdir()
     (source / "README.md").write_text("public\n", encoding="utf-8")
+    (source / "AGENTS.md").write_text("internal\n", encoding="utf-8")
+    (source / ".agents" / "skill.md").write_text("internal\n", encoding="utf-8")
     (source / ".forgejo" / "workflows" / "private.yml").write_text(
         "name: private\n", encoding="utf-8"
     )
     (source / ".devcontainer" / "devcontainer.json").write_text("internal\n", encoding="utf-8")
     (source / ".github" / "actionlint.yaml").write_text("internal\n", encoding="utf-8")
+    (source / ".specify" / "feature.json").write_text("internal\n", encoding="utf-8")
+    (source / "specs" / "private.md").write_text("internal\n", encoding="utf-8")
     (source / ".vscode" / "tasks.json").write_text("internal\n", encoding="utf-8")
     (source / "docs" / "PUBLIC_REPOSITORY.md").write_text("internal\n", encoding="utf-8")
     (source / "tools" / "ha-switchboard-export-public.py").write_text(
@@ -71,9 +78,13 @@ def test_public_export_omits_private_forgejo_workflows(tmp_path: Path) -> None:
     assert result == []
     assert (destination / "README.md").is_file()
     assert not (destination / ".forgejo").exists()
+    assert not (destination / ".agents").exists()
     assert not (destination / ".devcontainer").exists()
     assert not (destination / ".github").exists()
+    assert not (destination / ".specify").exists()
+    assert not (destination / "specs").exists()
     assert not (destination / ".vscode").exists()
+    assert not (destination / "AGENTS.md").exists()
     assert not (destination / "docs" / "PUBLIC_REPOSITORY.md").exists()
     assert not (destination / "tools" / "ha-switchboard-export-public.py").exists()
     assert not (destination / "tools" / "local-dev.sh").exists()

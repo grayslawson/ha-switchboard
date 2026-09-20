@@ -170,6 +170,58 @@ def test_ordered_routes_preserves_explicit_failover_chain_and_skips_open_circuit
     assert [route.route_id for route in ordered] == ["secondary", "tertiary"]
 
 
+def test_ordered_routes_skips_failovers_outside_latency_and_cost_budgets() -> None:
+    registry = RouteRegistry.from_dict({
+        "routes": [
+            {
+                "route_id": "primary",
+                "response_kinds": ["prose_response"],
+                "complexity_ceiling": "reasoning",
+                "privacy_modes": ["local_only"],
+                "latency_budget_ms": 100,
+                "cost_ceiling": 0.01,
+                "fallback_route_ids": ["too-slow", "too-expensive", "eligible"],
+            },
+            {
+                "route_id": "too-slow",
+                "response_kinds": ["prose_response"],
+                "complexity_ceiling": "reasoning",
+                "privacy_modes": ["local_only"],
+                "latency_budget_ms": 2_000,
+                "cost_ceiling": 0,
+            },
+            {
+                "route_id": "too-expensive",
+                "response_kinds": ["prose_response"],
+                "complexity_ceiling": "reasoning",
+                "privacy_modes": ["local_only"],
+                "latency_budget_ms": 100,
+                "cost_ceiling": 2,
+            },
+            {
+                "route_id": "eligible",
+                "response_kinds": ["prose_response"],
+                "complexity_ceiling": "reasoning",
+                "privacy_modes": ["local_only"],
+                "latency_budget_ms": 500,
+                "cost_ceiling": 0.1,
+            },
+        ]
+    })
+
+    ordered = ordered_routes(
+        registry,
+        registry.get("primary"),
+        complexity=Complexity.SIMPLE,
+        privacy_mode=PrivacyMode.LOCAL_ONLY,
+        required_response=ResponseKind.PROSE_RESPONSE,
+        max_latency_ms=500,
+        max_cost=0.5,
+    )
+
+    assert [route.route_id for route in ordered] == ["primary", "eligible"]
+
+
 def test_ordered_routes_accepts_any_allowed_response_kind() -> None:
     registry = RouteRegistry.from_dict({
         "routes": [{

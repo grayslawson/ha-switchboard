@@ -89,3 +89,14 @@ HACS login, registry login, or Home Assistant restart was attempted.
 T149 remains pending and T151 remains blocked: public mirror/tag/image
 agreement, HACS, and installed App/Core canary evidence are still absent. The
 existing unrelated dirty App/Core/test edits were preserved.
+
+## Current-worktree acceptance reconciliation
+
+The later bounded audit at `HEAD bd38f47486af5ffad16e03809179b384406a444d`
+corrected the earlier public-export baseline: the exporter now excludes the
+tracked private agent/spec paths and passes with 125 regular files exported.
+The static HACS shape check passed, but no HACS action was invoked. The exact
+pinned Hassfest reference was run against the read-only export and passed with
+`Integrations: 1` and `Invalid integrations: 0`. This is local exported-tree
+evidence only; the HACS token/public-repository gate and public release gates
+remain open.
