@@ -19,6 +19,7 @@ TOKEN="local-e2e-gateway-token"
 BUILD_TIMEOUT_SECONDS=300
 ENGINE_TIMEOUT_SECONDS=30
 CLEANUP_TIMEOUT_SECONDS=15
+HOOK_TIMEOUT_SECONDS=60
 
 usage() {
   cat <<'EOF'
@@ -278,15 +279,15 @@ container_user="$(engine_command "$ENGINE_TIMEOUT_SECONDS" exec "$RUN_NAME" awk 
 run_hook() {
   local kind="$1" hook="$2"
   [[ -z "$hook" ]] && return 0
-  env -i PATH="${PATH:-/usr/bin:/bin}" \
-    HA_SWITCHBOARD_E2E_KIND="$kind" \
-    HA_SWITCHBOARD_E2E_IMAGE="$IMAGE" \
-    HA_SWITCHBOARD_E2E_CONTAINER="$RUN_NAME" \
-    HA_SWITCHBOARD_E2E_NETWORK="$NETWORK" \
-    HA_SWITCHBOARD_E2E_DATA_DIR="$DATA_DIR" \
-    HA_SWITCHBOARD_E2E_SOURCE_ROOT="$ROOT_DIR" \
-    HA_SWITCHBOARD_E2E_DISCOVERY_HOOK=1 \
-    bash -c "$hook"
+  run_bounded "${HOOK_TIMEOUT_SECONDS}s" env -i PATH="${PATH:-/usr/bin:/bin}" \
+      HA_SWITCHBOARD_E2E_KIND="$kind" \
+      HA_SWITCHBOARD_E2E_IMAGE="$IMAGE" \
+      HA_SWITCHBOARD_E2E_CONTAINER="$RUN_NAME" \
+      HA_SWITCHBOARD_E2E_NETWORK="$NETWORK" \
+      HA_SWITCHBOARD_E2E_DATA_DIR="$DATA_DIR" \
+      HA_SWITCHBOARD_E2E_SOURCE_ROOT="$ROOT_DIR" \
+      HA_SWITCHBOARD_E2E_DISCOVERY_HOOK=1 \
+      bash -c "$hook"
 }
 run_hook supervisor-discovery "$SUPERVISOR_HOOK"
 run_hook integration-e2e "$INTEGRATION_HOOK"

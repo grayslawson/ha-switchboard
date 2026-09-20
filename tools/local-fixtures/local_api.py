@@ -361,8 +361,12 @@ def lifecycle_report(config: dict, states: dict[str, dict], profile: dict) -> di
             "has_gateway_token": config.get("has_gateway_token"),
         },
         "core": {
-            "fixture_entity_count": sum("switchboard_fixture" in entity_id for entity_id in states),
+            "fixture_entity_count": sum(
+                isinstance(entity_id, str) and "switchboard_fixture" in entity_id
+                for entity_id in states
+            ),
             "conversation_agent_present": AGENT in states,
+            "fixture_identity_fingerprint": fixture_identity_fingerprint(states),
         },
         "gateway": profile_status_report(profile),
     }
@@ -382,6 +386,7 @@ def scan_invariant_report(before: dict, after: dict, request_status: int, settle
     """Summarize scan acceptance without returning gateway or entity data."""
     before_report = profile_status_report(before)
     after_report = profile_status_report(after)
+    revision_present = bool(before_report["has_revision"] and after_report["has_revision"])
     return {
         "request_accepted": request_status == 202,
         "before_settled": profile_is_settled(before),
@@ -397,6 +402,7 @@ def scan_invariant_report(before: dict, after: dict, request_status: int, settle
             and settled
             and profile_is_settled(before)
             and profile_is_settled(after)
+            and revision_present
             and (
                 isinstance(before_report["capability_count"], int)
                 and isinstance(after_report["capability_count"], int)
@@ -404,6 +410,36 @@ def scan_invariant_report(before: dict, after: dict, request_status: int, settle
             )
         ),
     }
+
+
+def fixture_identity_fingerprint(states: Mapping[str, Mapping[str, Any]]) -> str | None:
+    """Hash the disposable fixture set without exposing entity identifiers."""
+    fixture_ids = sorted(
+        entity_id
+        for entity_id in states
+        if isinstance(entity_id, str) and "switchboard_fixture" in entity_id
+    )
+    if not fixture_ids:
+        return None
+    return hashlib.sha256("\0".join(fixture_ids).encode("utf-8")).hexdigest()[:16]
+
+
+def valid_fixture_identity_fingerprint(value: Any) -> bool:
+    """Accept only the bounded, secret-free fixture-set fingerprint shape."""
+    return isinstance(value, str) and len(value) == 16 and all(
+        character in "0123456789abcdef" for character in value
+    )
+
+
+def lifecycle_profile_is_settled(lifecycle: Mapping[str, Any]) -> bool:
+    """Require an active, revisioned profile with no pending work."""
+    gateway = lifecycle.get("gateway")
+    return isinstance(gateway, Mapping) and (
+        gateway.get("status") == "active"
+        and gateway.get("has_revision") is True
+        and gateway.get("pending_section_count") == 0
+        and gateway.get("pending_invalidation_count") == 0
+    )
 
 
 def safe_lifecycle_evidence(report: dict) -> dict:
@@ -421,6 +457,11 @@ def safe_lifecycle_evidence(report: dict) -> dict:
         "core": {
             "fixture_entity_count": core.get("fixture_entity_count"),
             "conversation_agent_present": bool(core.get("conversation_agent_present")),
+            "fixture_identity_fingerprint": (
+                core.get("fixture_identity_fingerprint")
+                if valid_fixture_identity_fingerprint(core.get("fixture_identity_fingerprint"))
+                else None
+            ),
         },
         "gateway": {
             "status": gateway.get("status"),
@@ -646,12 +687,15 @@ def startup_check() -> dict:
     ready = (
         target_identity_is_verified(target)
         and lifecycle["config_entry"]["domain"] == "ha_switchboard"
+        and lifecycle["config_entry"].get("has_gateway_token") is True
         and lifecycle["core"]["conversation_agent_present"]
-        and lifecycle["gateway"]["status"] == "active"
-        and lifecycle["gateway"]["has_revision"]
-        and lifecycle["gateway"]["pending_section_count"] == 0
-        and lifecycle["gateway"]["pending_invalidation_count"] == 0
+        and lifecycle["core"].get("fixture_entity_count", 0) > 0
+        and valid_fixture_identity_fingerprint(
+            lifecycle["core"].get("fixture_identity_fingerprint")
+        )
+        and lifecycle_profile_is_settled(lifecycle)
         and options["options_present"]
+        and options.get("configured_fields", {}).get("gateway_token") is True
         and options["app_started"] is True
     )
     if not ready:
@@ -715,12 +759,22 @@ def restart_cycle(*, allow_restart: bool) -> dict:
 
     if before_lifecycle["config_entry"]["domain"] != "ha_switchboard":
         raise RuntimeError("Refusing restart without the existing Switchboard config entry")
+    if before_lifecycle["config_entry"].get("has_gateway_token") is not True:
+        raise RuntimeError("Refusing restart without the existing Switchboard gateway token")
     if not before_lifecycle["core"]["conversation_agent_present"]:
         raise RuntimeError("Refusing restart without the existing Switchboard conversation agent")
-    if not before_options["options_present"] or before_options.get("app_started") is not True:
+    if (
+        not before_options["options_present"]
+        or before_options.get("app_started") is not True
+        or before_options.get("configured_fields", {}).get("gateway_token") is not True
+    ):
         raise RuntimeError("Refusing restart without existing local App options")
     if before_lifecycle["core"].get("fixture_entity_count", 0) <= 0:
         raise RuntimeError("Refusing restart without existing fixture entities")
+    if not valid_fixture_identity_fingerprint(
+        before_lifecycle["core"].get("fixture_identity_fingerprint")
+    ):
+        raise RuntimeError("Refusing restart without verified fixture identity")
     if (
         before_lifecycle["gateway"].get("status") != "active"
         or not before_lifecycle["gateway"].get("has_revision")
@@ -746,12 +800,16 @@ def restart_cycle(*, allow_restart: bool) -> dict:
     if after_app_target.get("volume_identity_fingerprint") != target.get("volume_identity_fingerprint"):
         raise RuntimeError("Refusing to continue after local Supervisor volume identity changed")
     after_app_lifecycle = run_core_fixture_command("lifecycle")
+    app_restart_profile_settled = lifecycle_profile_is_settled(after_app_lifecycle)
     app_restart_preserved = (
         before_lifecycle["config_entry"] == after_app_lifecycle["config_entry"]
         and before_lifecycle["core"] == after_app_lifecycle["core"]
+        and app_restart_profile_settled
     )
     if not app_restart_preserved:
-        raise RuntimeError("Local App restart did not preserve config entry and fixture anchors")
+        raise RuntimeError(
+            "Local App restart did not preserve config entry and fixture anchors; settled profile missing"
+        )
 
     run_host_command(
         ["docker", "exec", LOCAL_SUPERVISOR_CONTAINER, "ha", "core", "restart", "--raw-json"],
@@ -769,12 +827,14 @@ def restart_cycle(*, allow_restart: bool) -> dict:
         "app_restart_preserved": app_restart_preserved,
         "config_entry": before_lifecycle["config_entry"] == after_lifecycle["config_entry"],
         "fixture_count": before_lifecycle["core"]["fixture_entity_count"] == after_lifecycle["core"]["fixture_entity_count"],
-        "conversation_agent": after_lifecycle["core"]["conversation_agent_present"],
-        "profile_recovered": (
-            after_lifecycle["gateway"]["status"] == "active"
-            and after_lifecycle["gateway"]["has_revision"]
-            and after_lifecycle["gateway"]["pending_section_count"] == 0
+        "fixture_identity": (
+            before_lifecycle["core"].get("fixture_identity_fingerprint")
+            == after_lifecycle["core"].get("fixture_identity_fingerprint")
         ),
+        "conversation_agent": after_lifecycle["core"]["conversation_agent_present"],
+        "profile_recovered": lifecycle_profile_is_settled(after_lifecycle),
+        "options_started": after_options.get("options_present") is True
+        and after_options.get("app_started") is True,
         "volume_identity": (
             after_app_target.get("volume_identity_fingerprint") == target.get("volume_identity_fingerprint")
             and after_target.get("volume_identity_fingerprint") == target.get("volume_identity_fingerprint")

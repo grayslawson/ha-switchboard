@@ -111,7 +111,11 @@ def test_local_startup_evidence_is_read_only_and_secret_free(monkeypatch) -> Non
     api = _fixture_api()
     lifecycle = {
         "config_entry": {"domain": "ha_switchboard", "source": "hassio", "version": 1, "has_gateway_token": True},
-        "core": {"fixture_entity_count": 28, "conversation_agent_present": True},
+        "core": {
+            "fixture_entity_count": 28,
+            "conversation_agent_present": True,
+            "fixture_identity_fingerprint": "0123456789abcdef",
+        },
         "gateway": {
             "status": "active",
             "has_revision": True,
@@ -137,6 +141,44 @@ def test_local_startup_evidence_is_read_only_and_secret_free(monkeypatch) -> Non
     assert report["ready"] is True
     assert report["mode"] == "read_only"
     assert "secret-in-memory-only" not in repr(report)
+
+
+def test_local_startup_requires_existing_gateway_token_and_fixture_identity(monkeypatch) -> None:
+    api = _fixture_api()
+    lifecycle = {
+        "config_entry": {
+            "domain": "ha_switchboard",
+            "source": "hassio",
+            "version": 1,
+            "has_gateway_token": False,
+        },
+        "core": {
+            "fixture_entity_count": 28,
+            "conversation_agent_present": True,
+            "fixture_identity_fingerprint": None,
+        },
+        "gateway": {
+            "status": "active",
+            "has_revision": True,
+            "pending_section_count": 0,
+            "pending_invalidation_count": 0,
+        },
+    }
+    monkeypatch.setattr(api, "inspect_local_supervisor", lambda: {
+        "container": "busy_cohen",
+        "supervisor_port": 7123,
+        "supervisor_volume_verified": True,
+        "volume_identity_verified": True,
+        "volume_identity_fingerprint": "0123456789abcdef",
+    })
+    monkeypatch.setattr(api, "read_local_app_options", lambda: (
+        {"options_present": True, "app_started": True, "configured_fields": {"gateway_token": False}},
+        {},
+    ))
+    monkeypatch.setattr(api, "run_core_fixture_command", lambda command: lifecycle)
+
+    with pytest.raises(RuntimeError, match="startup evidence is incomplete"):
+        api.startup_check()
 
 
 def test_runtime_operation_matrix_covers_every_published_fixture_row(tmp_path) -> None:
@@ -429,6 +471,22 @@ def test_natural_ttl_wait_has_a_fixed_maximum(monkeypatch) -> None:
 
     assert waited == 5
     assert slept == [5]
+
+
+def test_fixture_identity_fingerprint_is_bounded_and_secret_free() -> None:
+    api = _fixture_api()
+    states = {
+        "light.switchboard_fixture_light": {"state": "off"},
+        "lock.switchboard_fixture_lock": {"state": "locked"},
+        "sensor.unrelated": {"state": "ok"},
+    }
+
+    fingerprint = api.fixture_identity_fingerprint(states)
+
+    assert api.valid_fixture_identity_fingerprint(fingerprint) is True
+    assert fingerprint == api.fixture_identity_fingerprint(dict(reversed(list(states.items()))))
+    assert "switchboard_fixture_light" not in fingerprint
+    assert api.fixture_identity_fingerprint({"sensor.unrelated": {"state": "ok"}}) is None
 
 
 def _run_live_follow_up_fixture() -> dict:

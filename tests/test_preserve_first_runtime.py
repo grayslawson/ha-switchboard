@@ -32,6 +32,7 @@ def lifecycle_report() -> dict:
         "core": {
             "fixture_entity_count": 28,
             "conversation_agent_present": True,
+            "fixture_identity_fingerprint": "0123456789abcdef",
         },
         "gateway": {
             "status": "active",

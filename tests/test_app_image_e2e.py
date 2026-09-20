@@ -27,6 +27,8 @@ def test_image_e2e_harness_is_bounded_and_fail_closed() -> None:
     assert 'CONTAINER_ATTEMPTED=true' in text
     assert 'NETWORK_ATTEMPTED=true' in text
     assert 'image rm --force "$IMAGE"' in text
+    assert 'HOOK_TIMEOUT_SECONDS=60' in text
+    assert 'run_bounded "${HOOK_TIMEOUT_SECONDS}s"' in text
 
 
 def test_apparmor_option_is_fail_closed_and_does_not_claim_unverified_enforcement() -> None:

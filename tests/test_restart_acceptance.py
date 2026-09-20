@@ -29,6 +29,7 @@ def lifecycle_report() -> dict:
         "core": {
             "fixture_entity_count": 28,
             "conversation_agent_present": True,
+            "fixture_identity_fingerprint": "0123456789abcdef",
         },
         "gateway": {
             "status": "active",
@@ -86,7 +87,7 @@ def test_restart_rejects_an_unverified_target_before_any_mutation(monkeypatch) -
     })
     monkeypatch.setattr(api, "run_core_fixture_command", lambda command: lifecycle_report())
     monkeypatch.setattr(api, "read_local_app_options", lambda: (
-        {"options_present": True, "app_started": True, "configured_fields": {}},
+        {"options_present": True, "app_started": True, "configured_fields": {"gateway_token": True}},
         {},
     ))
     monkeypatch.setattr(api, "run_host_command", lambda args, **kwargs: commands.append(args) or "")
@@ -112,6 +113,26 @@ def test_restart_cycle_requires_the_existing_switchboard_state(monkeypatch) -> N
 
     with pytest.raises(RuntimeError, match="existing Switchboard config entry"):
         api.restart_cycle(allow_restart=True)
+
+
+def test_restart_preflight_requires_gateway_token_and_fixture_identity(monkeypatch) -> None:
+    api = load_module("local_fixture_api_restart_credential_fixture_guard")
+    commands: list[list[str]] = []
+    report = lifecycle_report()
+    report["config_entry"]["has_gateway_token"] = False
+    report["core"]["fixture_identity_fingerprint"] = None
+    monkeypatch.setattr(api, "inspect_local_supervisor", target_report)
+    monkeypatch.setattr(api, "run_core_fixture_command", lambda command: report)
+    monkeypatch.setattr(api, "read_local_app_options", lambda: (
+        {"options_present": True, "app_started": True, "configured_fields": {"gateway_token": False}},
+        {},
+    ))
+    monkeypatch.setattr(api, "run_host_command", lambda args, **kwargs: commands.append(args) or "")
+
+    with pytest.raises(RuntimeError, match="gateway token"):
+        api.restart_cycle(allow_restart=True)
+
+    assert commands == []
 
 
 @pytest.mark.parametrize(
@@ -198,8 +219,10 @@ def test_authorized_restart_reports_preservation_invariants_without_real_host_co
         "app_restart_preserved": True,
         "config_entry": True,
         "fixture_count": True,
+        "fixture_identity": True,
         "conversation_agent": True,
         "profile_recovered": True,
+        "options_started": True,
         "volume_identity": True,
     }
     assert result["complete"] is True
@@ -216,7 +239,7 @@ def test_restart_stops_before_core_when_app_restart_loses_anchors(monkeypatch) -
     monkeypatch.setattr(api, "inspect_local_supervisor", target_report)
     monkeypatch.setattr(api, "run_core_fixture_command", lambda command: reports.pop(0))
     monkeypatch.setattr(api, "read_local_app_options", lambda: (
-        {"options_present": True, "app_started": True, "configured_fields": {}},
+        {"options_present": True, "app_started": True, "configured_fields": {"gateway_token": True}},
         {},
     ))
     monkeypatch.setattr(api, "run_host_command", lambda args, **kwargs: commands.append(args) or "")
@@ -227,6 +250,30 @@ def test_restart_stops_before_core_when_app_restart_loses_anchors(monkeypatch) -
 
     assert len(commands) == 1
     assert commands[0][-2:] == ["restart", api.LOCAL_APP_SLUG]
+
+
+def test_restart_stops_before_core_when_app_restart_leaves_profile_unsettled(monkeypatch) -> None:
+    api = load_module("local_fixture_api_restart_profile_guard")
+    commands: list[list[str]] = []
+    reports = [
+        lifecycle_report(),
+        {**lifecycle_report(), "gateway": {**lifecycle_report()["gateway"], "status": "stale"}},
+    ]
+    monkeypatch.setattr(api, "inspect_local_supervisor", target_report)
+    monkeypatch.setattr(api, "run_core_fixture_command", lambda command: reports.pop(0))
+    monkeypatch.setattr(api, "read_local_app_options", lambda: (
+        {"options_present": True, "app_started": True, "configured_fields": {"gateway_token": True}},
+        {},
+    ))
+    monkeypatch.setattr(api, "run_host_command", lambda args, **kwargs: commands.append(args) or "")
+    monkeypatch.setattr(api, "wait_for_local_component", lambda *args, **kwargs: None)
+
+    with pytest.raises(RuntimeError, match="settled profile"):
+        api.restart_cycle(allow_restart=True)
+
+    assert commands == [[
+        "docker", "exec", api.LOCAL_SUPERVISOR_CONTAINER, "ha", "apps", "restart", api.LOCAL_APP_SLUG,
+    ]]
 
 
 def test_cli_requires_explicit_restart_flag_and_rejects_it_elsewhere() -> None:
@@ -350,6 +397,8 @@ def test_scan_invariants_require_bounded_settled_before_and_after_profiles() -> 
     assert api.scan_invariant_report(pending, after, 202, True)["complete"] is False
     changed = {**before, "capability_count": 2}
     assert api.scan_invariant_report(before, changed, 202, True)["complete"] is False
+    missing_revision = {**before, "profile_revision": None}
+    assert api.scan_invariant_report(missing_revision, after, 202, True)["complete"] is False
 
 
 def test_component_wait_rejects_unknown_components() -> None:

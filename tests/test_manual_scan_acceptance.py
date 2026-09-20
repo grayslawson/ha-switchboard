@@ -174,7 +174,9 @@ def test_fixture_lifecycle_reports_are_secret_free() -> None:
         {"conversation.ha_switchboard": {"state": "ready"}, "light.switchboard_fixture_light": {"state": "off"}},
         {"status": "active", "profile_revision": "sha256:fixture", "capability_count": 1, "monitor": {"pending_sections": [], "pending_invalidations": []}},
     )
-    assert report["core"] == {"fixture_entity_count": 1, "conversation_agent_present": True}
+    assert report["core"]["fixture_entity_count"] == 1
+    assert report["core"]["conversation_agent_present"] is True
+    assert api.valid_fixture_identity_fingerprint(report["core"]["fixture_identity_fingerprint"])
     assert report["gateway"]["has_revision"] is True
     assert "sha256:fixture" not in repr(report)
     assert "fixture-gateway-token" not in repr(report)
