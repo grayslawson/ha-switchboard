@@ -9,8 +9,9 @@ provider was contacted.
 
 - Worktree: `/home/deploy/.local/state/pd-nixos/worktrees/ha-switchboard-ci-hardening`.
 - Branch: `codex/fix-apparmor-runtime`.
-- Current `HEAD`: `799efc422b372ecc8117336a904e426126889e80`; coordinated
-  App/Core source version: `0.2.0`.
+- Runtime observation baseline: `799efc422b372ecc8117336a904e426126889e80`;
+  coordinated App/Core source version: `0.2.0`. This read-only runtime record
+  was not rerun at the present source `HEAD e8538be`.
 - Worker-owned file: this evidence file only. Existing concurrent changes were
   preserved.
 - The repository-level `just agent-preflight` entrypoint was attempted but was

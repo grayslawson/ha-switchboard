@@ -11,7 +11,7 @@ remain open. No production Home Assistant endpoint was used.
 ## Scope and baseline
 
 - Worktree: `/home/deploy/.local/state/pd-nixos/worktrees/ha-switchboard-ci-hardening`.
-- Source revision at this reconciliation: `fef192becba60bf3bc3c0b1d40ba7000bd4ef8e2`;
+- Source revision at this reconciliation: `e8538be`;
   unrelated concurrent changes and existing commits were preserved.
 - Source versions agree at App/Core `0.2.0` in the checked-in metadata.
 - Local harness: Supervisor container `busy_cohen`, loopback Supervisor port
@@ -25,9 +25,9 @@ remain open. No production Home Assistant endpoint was used.
 | Gate | Status | Command and sanitized result |
 | --- | --- | --- |
 | Compile | passed | Current `python3 -m compileall -q app/ha_switchboard custom_components/ha_switchboard tools tests` — exit `0`. |
-| Source tests | passed with skips | `python3 -m pytest -q tests` — exit `0`, `437 passed, 4 skipped`. Skips were the unavailable host ConversationEntity/config-flow dependencies and the two explicitly opt-in live fixture probes. |
+| Source tests | passed with skips | `python3 -m pytest -q tests` — exit `0`, `445 passed, 4 skipped`. Skips were the unavailable host ConversationEntity/config-flow dependencies and the two explicitly opt-in live fixture probes. |
 | Compilation/quality | passed | `python3 -m compileall -q app/ha_switchboard custom_components/ha_switchboard tools tests` — exit `0`; `python3 tools/check_release_boundary.py --quality` — `quality audit: PASS`. |
-| Public export | passed locally | `python3 tools/ha-switchboard-export-public.py <temporary-directory>` — `public export: PASS (203 tracked files)`; exported-tree boundary — `release boundary: PASS`. The temporary export contained 125 regular files. This is not HACS, public-mirror, GHCR, or release proof. |
+| Public export | passed locally | `python3 tools/ha-switchboard-export-public.py <temporary-directory>` — `public export: PASS (204 tracked files)`; exported-tree boundary — `release boundary: PASS`. The temporary export contained 117 regular files. This is not HACS, public-mirror, GHCR, or release proof. |
 | Local App image smoke | passed | `bash tools/app-image-smoke.sh` — exit `0`; local image build, root-only data preparation, non-root runtime, profile persistence, recreate/restore, and stale-profile fail-closed behavior passed. This is not public-image proof. |
 
 The bounded local App-image E2E harness also passed after this reconciliation:
@@ -98,8 +98,10 @@ The following is the complete quickstart matrix classification for this run;
 
 | Gate | Status | Result |
 | --- | --- | --- |
-| Public export and exported-tree boundary | not run | No public export was created in this worker scope. |
-| Workflow, HACS, and Hassfest acceptance | not run | External/CI acceptance was not run against this preserved local harness. |
+| Public export and exported-tree boundary | passed locally | The current read-only export passed with 204 tracked files and 117 regular files; the boundary check passed. This is not public-mirror publication proof. |
+| Private workflow lint | passed locally | `actionlint -config-file .github/actionlint.yaml .forgejo/workflows/*.yml` passed with no diagnostics. |
+| HACS acceptance | pending | The authorized HACS action/public-repository path was not run. Static metadata shape is not HACS acceptance. |
+| Hassfest acceptance | local export evidence only | The pinned Hassfest container passed in an earlier read-only exported-tree run; no claim is made for public-mirror or installed acceptance. |
 | Multi-architecture image, GHCR digest, tag, mirror, and source-label proof | not run | Local image smoke is not publication or immutable-artifact proof. |
 | Live App/Core release canary | not run | Production/public endpoints were not used. |
 
@@ -112,11 +114,8 @@ The following is the complete quickstart matrix classification for this run;
 - The direct fixture matrix helper completed all rows but did not emit a
   restoration assertion; this is recorded as partial/attention rather than
   inferred success.
-- Worker-owned changed files are the four files in this task scope:
-  `quickstart.md`, `evidence/local-checks-2026-09-20.md`,
-  `evidence/local-quickstart-2026-09-20.md`, and
-  `evidence/live-gate-readiness-2026-09-20.md`. Existing concurrent changes
-  outside that scope were not edited.
+- This record is limited to the owned documentation/evidence scope. Existing
+  concurrent changes outside that scope were not edited.
 
 ## Task disposition
 

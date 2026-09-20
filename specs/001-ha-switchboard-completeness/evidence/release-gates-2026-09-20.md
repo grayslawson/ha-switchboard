@@ -6,6 +6,11 @@ packaging, public-export, release-boundary, and workflow-lint checks passed.
 No repository was published or mutated, and the preserved Home Assistant /
 Supervisor environment was not reset, restarted, removed, or recreated.
 
+The initial baseline and earlier sections in this record are historical
+snapshots. Use the later recorded refresh and the current local reconciliation
+in `local-checks-2026-09-20.md` for current counts; none of these sections
+closes T149 or T151.
+
 ## Scope and baseline
 
 - Worktree: `/home/deploy/.local/state/pd-nixos/worktrees/ha-switchboard-ci-hardening`.
@@ -95,7 +100,7 @@ the pre-publication App image E2E through a 300-second timeout with a
 and T151 remain pending for matching public mirror/tag/GHCR/HACS and installed
 App/Core canary evidence.
 
-## Follow-up public acceptance audit — current worktree
+## Earlier public acceptance audit
 
 At `HEAD bd38f47486af5ffad16e03809179b384406a444d`, the bounded package/public
 checks produced these sanitized results:
@@ -122,9 +127,9 @@ checks produced these sanitized results:
 The HACS token/public-repository gate,
 public mirror/tag/GHCR provenance, and installed App/Core canary remain open.
 
-## Current branch release/provenance refresh — 2026-09-20
+## Latest recorded branch release/provenance refresh — collected at `799efc4`
 
-The current branch is clean at `HEAD`
+The branch was clean at the then-current `HEAD`
 `799efc422b372ecc8117336a904e426126889e80`; local source declarations in
 `app/config.yaml`, `pyproject.toml`, and
 `custom_components/ha_switchboard/manifest.json` all report `0.2.0`.
@@ -166,3 +171,9 @@ artifact; migration/rollback; provider canary; and installed App/Core
 canary. No publication, HACS acceptance, multi-architecture artifact match,
 or installed canary is claimed. No credentials, push, tag, registry login,
 Home Assistant restart, reset, removal, or recreation was performed.
+
+The public and registry observations in this section are historical evidence
+from `799efc4`, not exact provenance for the present source
+`HEAD e8538be`. Current local source/export counts are refreshed in
+`evidence/local-checks-2026-09-20.md`; the external publication, provider,
+AppArmor, migration/rollback, and installed-canary gates remain pending.

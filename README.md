@@ -51,6 +51,12 @@ App credentials, or contacts an external provider. Run its `verify` command
 after an integration install or upgrade to capture secret-free config-entry
 evidence.
 
+For the public release evidence model and the distinction between source,
+local-harness, live, and public-release claims, use the
+[release checklist](docs/RELEASE.md). The maintainers' private completeness
+quickstart has the same preserve-first boundary; its local-dev steps can
+restart or reconfigure the disposable harness and must be authorized first.
+
 The source manifest sets `hassio_api: true` because scoped Supervisor
 self-information and discovery are required. This is not broad Home Assistant
 API access. A running installation can still use a cached manifest; refresh or
@@ -445,7 +451,10 @@ For repeatable local tests, put literal `NAME=value` lines in an ignored
 `HA_SWITCHBOARD_PRIVACY_MODE=jev_hosted_allowed`. The `configure` and `e2e`
 commands load only the documented `HA_SWITCHBOARD_*` option names; explicit
 exported variables take precedence. The staging copy excludes `.env.local`.
-Do not commit provider keys or gateway tokens. `e2e` applies options and
+Fallback settings use the separate `HA_SWITCHBOARD_FALLBACK_PROVIDER`,
+`HA_SWITCHBOARD_FALLBACK_ENDPOINT`, `HA_SWITCHBOARD_FALLBACK_MODEL`, and
+`HA_SWITCHBOARD_FALLBACK_API_KEY` names; do not reuse Jev option names for a
+fallback route. Do not commit provider keys or gateway tokens. `e2e` applies options and
 restarts only the App when these values are present; it does not rebuild
 Home Assistant Core or remove its Docker volume.
 

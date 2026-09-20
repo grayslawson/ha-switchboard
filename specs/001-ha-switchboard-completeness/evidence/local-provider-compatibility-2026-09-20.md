@@ -15,7 +15,7 @@ mutation was performed.
 | Gate | Result | Evidence |
 | --- | --- | --- |
 | Focused provider acceptance | passed | `python3 -m pytest -q tests/test_fallback_routing.py tests/test_openrouter_fallback.py tests/test_typed_http_fallback.py tests/test_provider_architecture.py tests/test_route_policy.py` — `43 passed`. |
-| Full source suite | passed with expected skips | `python3 -m pytest -q` — `430 passed, 4 skipped`; skips are unavailable Home Assistant host/config-flow dependencies and explicitly opt-in local runtime probes. |
+| Full source suite at provider-evidence collection | passed with expected skips | `python3 -m pytest -q` — `430 passed, 4 skipped`; this is the provider worker's historical collection result. Skips are unavailable Home Assistant host/config-flow dependencies and explicitly opt-in local runtime probes. |
 | Python compilation | passed | `python3 -m compileall -q app/ha_switchboard tests/test_openrouter_fallback.py tests/test_typed_http_fallback.py tests/test_route_policy.py tests/test_fallback_routing.py` — exit `0`. |
 | Patch hygiene | passed | `git diff --check` — exit `0`. |
 
@@ -45,3 +45,8 @@ installed AppArmor parity, App/Core canary behavior, or release provenance.
 T148 and T149 remain incomplete; T148 still requires its authorized runtime and
 release evidence, and T149 still requires the external provider, image,
 publication, and canary gates. No live provider compatibility claim is made.
+
+The current source checkout was independently rechecked with the full source
+suite at `HEAD e8538be`:
+`445 passed, 4 skipped`. That refresh did not contact a provider, so the live
+provider gates remain unchanged.

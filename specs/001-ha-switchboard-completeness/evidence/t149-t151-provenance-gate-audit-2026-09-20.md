@@ -6,6 +6,10 @@ read-only provenance observations. No credentials were supplied, printed, or
 stored. No repository, registry, tag, release, or Home Assistant environment
 was authenticated to or mutated.
 
+The revision and count snapshots below are retained as historical evidence;
+the latest external observation is explicitly labeled later in this record.
+It does not authorize or imply T149/T151 completion.
+
 ## Concrete gate gap and correction
 
 The prior `tools/verify-ghcr-image.py` path required registry username/token
@@ -90,7 +94,7 @@ T149 remains pending and T151 remains blocked: public mirror/tag/image
 agreement, HACS, and installed App/Core canary evidence are still absent. The
 existing unrelated dirty App/Core/test edits were preserved.
 
-## Current-worktree acceptance reconciliation
+## Earlier-worktree acceptance reconciliation
 
 The later bounded audit at `HEAD bd38f47486af5ffad16e03809179b384406a444d`
 corrected the earlier public-export baseline: the exporter now excludes the
@@ -101,9 +105,9 @@ pinned Hassfest reference was run against the read-only export and passed with
 evidence only; the HACS token/public-repository gate and public release gates
 remain open.
 
-## Current branch provenance refresh — 2026-09-20
+## Latest recorded branch provenance refresh — collected at `799efc4`
 
-The authoritative current branch state is clean at
+The recorded branch state was clean at
 `799efc422b372ecc8117336a904e426126889e80` on
 `codex/fix-apparmor-runtime`; its three coordinated version declarations are
 all `0.2.0`. The current public comparison was collected anonymously and
@@ -142,3 +146,10 @@ public App repository/Supervisor acceptance, AppArmor enforcement parity,
 migration/rollback, provider acceptance, and installed App/Core canary proof.
 No publication, HACS acceptance, exact multi-architecture artifact match, or
 installed canary is claimed; no credential or external mutation was used.
+
+This is the latest recorded external provenance observation, not an exact
+provenance claim for the present source `HEAD e8538be`. Current
+local source/export checks are recorded in
+`evidence/local-checks-2026-09-20.md`; T149 and T151 remain open until
+authoritative external and installed evidence matches one protected source
+revision.

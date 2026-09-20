@@ -1,8 +1,12 @@
 # Quickstart Validation: HA Switchboard Feature Completeness
 
 This is a validation guide, not an implementation recipe. It is safe for the
-existing local development environment: normal commands restart or rebuild
-processes but do not remove the Supervisor/Core volume.
+existing local development environment when its preserve-first rules are
+followed: normal commands may restart or rebuild processes, but do not remove
+the Supervisor/Core volume. The local-dev commands below can still create,
+configure, or restart the disposable harness. This documentation pass did
+not run those mutating commands, any opt-in restart, token rotation, or
+provider request.
 
 **T148 evidence status (2026-09-20): partial.** This quickstart is not a
 complete live Supervisor/App/Core acceptance run. Its commands and matrix
@@ -14,7 +18,7 @@ release gates. The current source metadata agrees on App/Core version `0.2.0`,
 but that is source evidence, not installed or published-artifact proof.
 
 The current source-level run at `HEAD`
-`fef192becba60bf3bc3c0b1d40ba7000bd4ef8e2` was `437 passed, 4 skipped`.
+`e8538be3548ddaf7a84d05d06ff279fa787ba1fc` was `445 passed, 4 skipped`.
 The skips are the unavailable host ConversationEntity/config-flow dependencies
 and two explicitly opt-in live fixture probes. No command in this
 reconciliation reset, removed, recreated, reconfigured, or restarted the
@@ -66,8 +70,11 @@ separate gate.
 - A disposable local Home Assistant Supervisor harness.
 - Optional provider values in an ignored .env.local file using only:
   HA_SWITCHBOARD_JEV_ENDPOINT, HA_SWITCHBOARD_JEV_API_KEY,
+  HA_SWITCHBOARD_FALLBACK_PROVIDER, HA_SWITCHBOARD_FALLBACK_ENDPOINT,
+  HA_SWITCHBOARD_FALLBACK_MODEL, HA_SWITCHBOARD_FALLBACK_API_KEY,
   HA_SWITCHBOARD_GATEWAY_TOKEN, HA_SWITCHBOARD_PROFILE_REFRESH_MINUTES, and
-  HA_SWITCHBOARD_PRIVACY_MODE.
+  HA_SWITCHBOARD_PRIVACY_MODE. The fallback variables are optional and must
+  remain separate from the Jev variables.
 - Never use a production Home Assistant URL or production token with fixture
   setup commands.
 
@@ -184,8 +191,11 @@ For a release candidate, additionally run:
     python3 tools/ha-switchboard-export-public.py /tmp/ha-switchboard-public
     python3 /tmp/ha-switchboard-public/tools/check_release_boundary.py --root /tmp/ha-switchboard-public
 
-Run workflow lint, HACS, and Hassfest through the repository CI. Build and
-inspect both linux/amd64 and linux/arm64 images. Verify the source revision and
+Run private workflow lint, HACS, and Hassfest through the repository's
+documented release path. The pinned Hassfest container may also be run against
+a read-only public export locally; HACS still requires its authorized public
+repository/action path. Build and inspect both linux/amd64 and linux/arm64
+images. Verify the source revision and
 version in the App, Core integration, Python package, changelog, tag, image
 labels, and public mirror. Only then run the live App/Core canary and record
 its observed runtime state separately from source/CI results.
@@ -214,20 +224,20 @@ full provider responses in the evidence record.
 ## Observed source evidence for this pass
 
 - Worktree: `codex/fix-apparmor-runtime`, current `HEAD`
-  `fef192becba60bf3bc3c0b1d40ba7000bd4ef8e2`. This is the source revision
+  `e8538be3548ddaf7a84d05d06ff279fa787ba1fc`. This is the source revision
   used for the current read-only checks; external publication gates remain
   open.
 - Coordinated source version: `0.2.0` in the App config/image metadata, gateway
   package, Core manifest, and changelog.
 - Current local source checks: `python3 -m compileall -q
   app/ha_switchboard custom_components/ha_switchboard tools tests` passed;
-  `python3 -m pytest -q tests` passed (`437 passed, 4 skipped`); and
+  `python3 -m pytest -q tests` passed (`445 passed, 4 skipped`); and
   `python3 tools/check_release_boundary.py --quality` passed. The current
   skips are the unavailable host ConversationEntity/config-flow dependencies
   and two opt-in live fixture probes. `git diff --check` is clean for the
   owned paths.
-- The current read-only public export passed as `public export: PASS (203
-  tracked files)`; its temporary export contained 125 regular files and
+- The current read-only public export passed as `public export: PASS (204
+  tracked files)`; its temporary export contained 117 regular files and
   `check_release_boundary.py --root` passed. This is local export evidence,
   not HACS, public-mirror, GHCR, or release proof.
 - The preserve-first runtime guards now verify Docker volume identity and

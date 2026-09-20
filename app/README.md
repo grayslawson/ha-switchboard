@@ -23,7 +23,8 @@ OpenRouter/Jev compatibility note, security model, and troubleshooting, read
 
 Local E2E, image, and host-test results cover this checkout and its disposable
 harness. They do not prove a public release or a working HACS install/update
-path.
+path. For the detailed acceptance matrix and current open-gate evidence, see
+the repository's [release checklist](../docs/RELEASE.md).
 
 In 0.2.0 the App provides the gateway, redacted profile store, readiness and
 scan UI, and provider routing. It does not discover Home Assistant entities,

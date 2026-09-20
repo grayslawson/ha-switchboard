@@ -6,6 +6,11 @@ worker performed bounded read-only validation of the current checkout's
 public export. It did not publish, push, tag, authenticate to, or mutate an
 external repository, and it did not use or record credentials.
 
+The baseline and intermediate counts below are historical observations from
+earlier checkout revisions. The final recorded refresh is still external
+evidence only; current local counts are maintained in
+`local-checks-2026-09-20.md`.
+
 ## Scope and baseline
 
 - Worktree: `/home/deploy/.local/state/pd-nixos/worktrees/ha-switchboard-ci-hardening`.
@@ -82,7 +87,7 @@ References:
 No workflow, source, task, existing evidence file, external repository, or
 Home Assistant environment was changed by this worker.
 
-## Current-worktree reconciliation
+## Earlier-worktree reconciliation
 
 The current audit supersedes the older baseline above at `HEAD
 bd38f47486af5ffad16e03809179b384406a444d`:
@@ -103,9 +108,9 @@ bd38f47486af5ffad16e03809179b384406a444d`:
 
 The current local result therefore does not claim Hassfest or HACS acceptance.
 
-## Current branch refresh — 2026-09-20
+## Latest recorded public-check refresh — collected at `799efc4`
 
-Fresh bounded checks were run against current `HEAD`
+Fresh bounded checks were run against the then-current `HEAD`
 `799efc422b372ecc8117336a904e426126889e80` on
 `codex/fix-apparmor-runtime`; the worktree was clean before this evidence
 update. The public exporter examined `203 tracked files` and produced `125`
@@ -130,3 +135,9 @@ action was not invoked. Hassfest passed only for the read-only local export;
 it does not prove public mirror state, HACS acceptance, or an installed
 canary. No external repository, registry, or Home Assistant environment was
 mutated.
+
+This is the latest recorded public-check observation, not an exact provenance
+claim for the present source `HEAD e8538be`. The current
+checkout's fresh local export and source checks are recorded in
+`evidence/local-checks-2026-09-20.md`; no new HACS, public-mirror, registry, or
+installed-canary action was taken during that refresh.

@@ -372,7 +372,7 @@ all user stories are implemented.
 - Ledger state: **148 of 153 tasks checked; 5 remain open**. The checked
   tasks represent implemented source/artifacts with focused evidence; they do
   not imply that the public release gates are complete.
-- Source evidence: the latest `python3 -m pytest -q` passes **419 tests with 4
+- Source evidence: the latest `python3 -m pytest -q` passes **445 tests with 4
   expected skips**. Two skips require the Home Assistant 2026.9
   runtime/config-flow dependency; the other two are opt-in live follow-up and
   native-miss probes. The focused provider/Web UI hardening suite passes **48
@@ -382,10 +382,10 @@ all user stories are implemented.
   tests with 2 opt-in skips**. The opt-in live follow-up probe passes with its
   unavailable second-user/natural-TTL gates reported explicitly. Compile, quality,
   release-boundary, shell-syntax, and whitespace checks pass.
-- Release-source evidence: the focused release, boundary, quality, packaging,
-  workflow, and provenance checks pass (**46 tests**); the sanitized public
-  export contains 109 tracked files and passes its boundary check. The release
-  workflows now
+- Release-source evidence: the focused release/boundary/local-dev/workflow
+  suite passes (**24 tests**), the broader release/provenance checks pass
+  (**46 tests**), and the sanitized public export contains **204 tracked / 117
+  regular files** and passes its boundary check. The release workflows now
   enforce the `app/CHANGELOG.md` version marker, Hassfest-compatible
   conversation-agent translations, and the bounded App-image E2E gate before
   tag publication. These checks do not close the external publication gates.
@@ -424,7 +424,7 @@ all user stories are implemented.
   or release acceptance. HACS remains credential- and public-repository-gated.
   The read-only provenance check in
   `specs/001-ha-switchboard-completeness/evidence/provenance-checks-2026-09-20.md`
-  also found the public `v0.2.0`/GHCR revision differs from this dirty local
+  also found the public `v0.2.0`/GHCR revision differs from this local
   candidate, so no publication claim is made from the existing public artifact.
 - Delegated-agent rule: workers return on completion, failure, or attention;
   the coordinator uses one event-driven watcher per group and does not poll
@@ -434,7 +434,7 @@ all user stories are implemented.
   path, credentials, query, or fragment), and its regression test is included
   in the current source result. T059 now also supports explicitly supplied
   second-user and natural-TTL opt-ins without changing the safe default or
-  persisting credentials. The current source result is 437 tests with 4
+  persisting credentials. The current source result is 445 tests with 4
   expected skips; the preserve-first/local-acceptance focused suite passes
   32 tests with one opt-in live skip.
 - Requirements-quality status is separate from implementation status:

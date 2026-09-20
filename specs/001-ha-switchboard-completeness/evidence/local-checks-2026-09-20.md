@@ -7,20 +7,20 @@ raw entity identifiers, utterances, provider bodies, or volume paths are
 retained here.
 
 Current baseline: branch `codex/fix-apparmor-runtime`, `HEAD`
-`fef192becba60bf3bc3c0b1d40ba7000bd4ef8e2`, coordinated App/Core version
+`e8538be3548ddaf7a84d05d06ff279fa787ba1fc`, coordinated App/Core version
 `0.2.0`.
 
 ## Source and packaging
 
 | Gate | Result | Evidence |
 | --- | --- | --- |
-| Full source tests | passed with expected skips | `python3 -m pytest -q tests` — `437 passed, 4 skipped`. Skips are the unavailable host ConversationEntity/config-flow dependencies and the two opt-in live fixture probes. |
+| Full source tests | passed with expected skips | `python3 -m pytest -q tests` — `445 passed, 4 skipped`. Skips are the unavailable host ConversationEntity/config-flow dependencies and the two opt-in live fixture probes. |
 | Compilation and quality | passed | `python3 -m compileall -q app/ha_switchboard custom_components/ha_switchboard tools tests`; `python3 tools/check_release_boundary.py --quality`; `git diff --check` for the owned paths. |
 | Workflow lint | passed | `actionlint -config-file .github/actionlint.yaml .forgejo/workflows/*.yml`. |
-| Publication workflow hardening | passed locally | `python3 -m pytest -q tests/test_release_workflows.py` — `9 passed`; the mirror workflow now requires the exact source/tag revision, commit marker, GHCR gate, and App-image E2E gate before public publication. |
-| Public export | passed locally | `python3 tools/ha-switchboard-export-public.py <temporary-directory>` — `public export: PASS (203 tracked files)`; the temporary export contained 125 regular files, and `python3 <temporary-export>/tools/check_release_boundary.py --root <temporary-export>` passed. This is not HACS, public-mirror, GHCR, or release proof. |
+| Publication workflow hardening | passed locally | `python3 -m pytest -q tests/test_release_workflows.py tests/test_release_boundary.py tests/test_local_dev.py` — `24 passed`; the mirror workflow now requires the exact source/tag revision, commit marker, GHCR gate, and App-image E2E gate before public publication. |
+| Public export | passed locally | `python3 tools/ha-switchboard-export-public.py <temporary-directory>` — `public export: PASS (204 tracked files)`; the temporary export contained 117 regular files, and `python3 <temporary-export>/tools/check_release_boundary.py --root <temporary-export>` passed. This is not HACS, public-mirror, GHCR, or release proof. |
 | Provenance gate hardening | passed locally | `python3 -m pytest -q tests/test_ghcr_revision_gate.py` — `8 passed`; the verifier now supports sanitized offline records, anonymous read-only registry validation, immutable digests, exact architecture sets, and release/image/source revision agreement. It does not turn the currently mismatched public `v0.2.0` artifact into a valid candidate. |
-| Local App-image smoke/E2E | passed locally | `bash tools/app-image-smoke.sh` and `bash tools/app-image-e2e.sh` both exited `0`; local image, non-root runtime, Supervisor-like ingress/token boundary, persistence/recreate, and bounded cleanup checks passed. AppArmor was accurately reported unavailable on this WSL host. |
+| Local App-image smoke/E2E | passed in prior local evidence | `bash tools/app-image-smoke.sh` and `bash tools/app-image-e2e.sh` both exited `0` in the source-bearing parent evidence run; local image, non-root runtime, Supervisor-like ingress/token boundary, persistence/recreate, and bounded cleanup checks passed. AppArmor was accurately reported unavailable on this WSL host. These image checks were not rerun for this documentation-only refresh. |
 
 ## Preserved local runtime
 
@@ -56,3 +56,17 @@ candidate; no publication claim is made.
 
 No publication, push, tag, reset, volume removal, App/Core restart, or provider
 request was performed for this evidence record.
+
+## Current checkout reconciliation — 2026-09-20
+
+The current source descendant at `HEAD
+e8538be` was freshly checked with the full source suite (`445 passed, 4 skipped`), compilation,
+`check_release_boundary.py --quality`, private workflow `actionlint`, and
+`git diff --check`. A fresh read-only public export passed with `204` tracked
+files and `117` regular files; the exported-tree release boundary passed. The
+focused release/boundary/local-dev/workflow suite passed `24 tests`.
+
+These fresh checks do not refresh the earlier App-image, preserved-harness,
+provider, public-mirror, GHCR, HACS, AppArmor, or canary observations. Those
+remain bounded evidence at their recorded revisions, and the exact open gates
+remain T059, T084, T148, T149, and T151 as described above.

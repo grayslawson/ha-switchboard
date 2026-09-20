@@ -70,8 +70,10 @@ prove that the exported repository can be installed or updated through HACS.
 This checkout records source metadata for `0.2.0` in the App, gateway package,
 Core manifest, Docker build metadata, and changelog. It does not record a
 successful public mirror, protected-master ancestry, GitHub tag or Release,
-GHCR digest, HACS/Hassfest result, or live App/Core canary. Keep those states
-separate when preparing a release.
+GHCR digest, public HACS acceptance, or live App/Core canary. A local pinned
+Hassfest run against an exported tree, if recorded in private evidence, is
+still not public-mirror or installed acceptance. Keep those states separate
+when preparing a release.
 
 The HACS metadata is intentionally limited to the custom-integration boundary:
 `hacs.json` enables README rendering and release-archive installation, and

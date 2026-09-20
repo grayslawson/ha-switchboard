@@ -2,6 +2,8 @@
 
 **Review date:** 2026-09-20
 **Worktree:** `ha-switchboard-ci-hardening`
+**Reviewed revision:** `e8538be3548ddaf7a84d05d06ff279fa787ba1fc`
+(current source revision)
 **Scope:** This note records the current Spec Kit convergence boundary. The
 primary runtime, test, workflow, fixture, and user-document changes remain
 owned by their respective workstreams.
@@ -53,15 +55,17 @@ evidence.
 - `tools/local-dev.sh` preserves the local Supervisor/Core volume by default;
   reset is guarded by a verified snapshot and explicit confirmation.
 - Supervisor discovery retry is bounded and reuses a sanitized payload.
-- Latest full pytest result: `411 passed, 4 skipped`. The skips require the absent
-  Home Assistant runtime/config-flow dependency in the host worktree and are
-  the opt-in native-miss probe; they are not source or live proof by
-  themselves.
-- Release acceptance, boundary, quality, and workflow checks pass (`27
-  passed`); the sanitized public export contains 109 tracked files and passes
-  its release-boundary check. The release workflows now validate the changelog
-  marker, the Home Assistant conversation-agent translation shape, and the
-  bounded App-image E2E gate before tag publication.
+- Latest full pytest result at the reviewed revision: `445 passed, 4 skipped`.
+  The skips require the absent Home Assistant runtime/config-flow dependency
+  in the host worktree and the two opt-in live fixture probes; they are not
+  source or live proof by themselves.
+- The current focused release/boundary/local-dev/workflow suite passes (`24
+  passed`),
+  the quality audit passes, and the sanitized public export contains `204`
+  tracked files and `117` regular files before its release-boundary check.
+  The release workflows validate the changelog marker, the Home Assistant
+  conversation-agent translation shape, and the bounded App-image E2E gate
+  before tag publication.
 - The preserved local Supervisor harness was recovered after a host reboot and
   independently checked read-only: Core and Supervisor returned HTTP 200, the
   App was started and ready, the persisted `hassio` integration entry and
@@ -90,3 +94,8 @@ evidence.
 - The supplied pd-nixos AGENTS map does not match this repository-shaped
   worktree: `just agent-preflight` could not run because no Justfile is present.
   This did not change the artifact-only scope.
+
+The task ledger contains older narrative snapshots, including a `109`-file
+export count and earlier test totals, alongside its later `437`-test snapshot.
+Those historical lines are outside this worker's allowed scope; the exact
+current counts above are the ones to use for this documentation review.

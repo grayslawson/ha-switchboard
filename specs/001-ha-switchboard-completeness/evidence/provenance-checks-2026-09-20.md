@@ -77,10 +77,10 @@ would not repair that mismatch.
   registries, Home Assistant environments, or credentials were changed.
 - Worker-owned changed file: `specs/001-ha-switchboard-completeness/evidence/provenance-checks-2026-09-20.md` only.
 
-## Current branch refresh — 2026-09-20
+## Latest recorded branch refresh — collected at `799efc4`
 
-The earlier collection above is superseded for current-branch comparison by a
-fresh read-only pass at `HEAD=799efc422b372ecc8117336a904e426126889e80` on
+The earlier collection above is superseded for branch comparison by a fresh
+read-only pass at then-current `HEAD=799efc422b372ecc8117336a904e426126889e80` on
 `codex/fix-apparmor-runtime`. `git status --short --branch` showed no
 uncommitted paths; the branch is nine commits ahead of its local Forgejo
 tracking ref, whose observed tip is `fcff6e86e729f34d4d01201cafebe3bf86f9cddd`.
@@ -110,3 +110,8 @@ The current external gates therefore remain open: current-`HEAD` public
 mirror/tag/release agreement, current-`HEAD` GHCR label agreement, HACS
 acceptance, and an installed App/Core canary. No publication, HACS
 acceptance, or installed canary is inferred.
+
+This remains the latest recorded external provenance observation. It was not
+rerun for the present source `HEAD e8538be`; the fresh local
+source/export checks are recorded separately, and no new external object is
+treated as matching the current checkout.

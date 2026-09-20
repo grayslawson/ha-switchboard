@@ -38,6 +38,11 @@ The actionlint command applies to the private Forgejo source checkout; the
 public export intentionally omits the private `.forgejo/` workflows and their
 runner configuration.
 
+The private completeness quickstart provides a preserve-first local
+acceptance walkthrough when working from the full source checkout. It
+identifies which commands may restart or reconfigure the disposable harness
+and keeps incomplete live/provider/public gates explicitly open.
+
 The release pipeline builds the App for `amd64` and `arm64` and publishes the
 multi-architecture image referenced by `app/config.yaml` to
 `ghcr.io/grayslawson/ha-switchboard`. The source tree and image are independent
