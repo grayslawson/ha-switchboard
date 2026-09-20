@@ -87,6 +87,37 @@ _SECRET_LOG = re.compile(
 _DOC_LINK = re.compile(r"\[[^\]]+\]\(([^)#]+)(?:#[^)]+)?\)")
 
 
+def _bounded_tool_violations(root: Path) -> list[str]:
+    """Reject local harnesses that can wait forever on external processes."""
+
+    findings: list[str] = []
+    scripts = (
+        root / "tools" / "app-image-e2e.sh",
+        root / "tools" / "app-image-smoke.sh",
+        root / "tools" / "local-dev.sh",
+    )
+    for path in scripts:
+        if not path.exists():
+            continue
+        relative = _relative(path, root)
+        text = path.read_text(encoding="utf-8")
+        if "run_bounded()" not in text or "--kill-after=5s" not in text:
+            findings.append(f"{relative}: external operations are not fail-closed bounded")
+        if relative == "tools/app-image-smoke.sh" and "else\n    \"$@\"" in text:
+            findings.append(f"{relative}: timeout fallback runs an unbounded command")
+        if relative == "tools/local-dev.sh":
+            required = (
+                "run_bounded \"$DEVCONTAINER_TIMEOUT_SECONDS\"",
+                "run_bounded \"$DOCKER_TIMEOUT_SECONDS\" docker",
+                "run_bounded \"$DEVCONTAINER_TIMEOUT_SECONDS\" rsync",
+                "run_in_container_foreground",
+            )
+            for marker in required:
+                if marker not in text:
+                    findings.append(f"{relative}: missing bounded subprocess boundary {marker!r}")
+    return findings
+
+
 def _quality_files(root: Path) -> list[Path]:
     files: list[Path] = []
     for name in _QUALITY_ROOTS:
@@ -133,6 +164,7 @@ def quality_violations(root: Path = PRODUCT_ROOT) -> list[str]:
 
     root = root.resolve()
     findings: list[str] = []
+    findings.extend(_bounded_tool_violations(root))
     source_files = _quality_files(root)
     parsed: list[tuple[Path, str, ast.AST]] = []
     for path in source_files:

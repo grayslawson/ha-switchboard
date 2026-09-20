@@ -91,6 +91,12 @@ conversation engine is `conversation.ha_switchboard`; `invoke` sends a
 read-only temperature question through the real Assist pipeline.
 `profile` reads the local integration's gateway address and token in Core
 memory, prints only profile status/count, and never displays either value.
+The named-group acceptance is deterministic and local to the test suite:
+`tests/test_local_fixtures.py` compiles the sanitized fixture profile, proves
+that the explicit `Switchboard Fixture Lights` group is represented with two
+opaque members, and verifies that only the exact named on/off request selects
+it. Unknown and invalid groups must return stable refusal codes. This path
+does not run Assist, change entity state, call Jev, or use credentials.
 `scan` performs one bounded, authenticated `POST /v1/profile/scan` against the
 configured local gateway, then polls profile status for a settled active profile
 for at most 12 seconds. It reports only HTTP status, freshness, revision

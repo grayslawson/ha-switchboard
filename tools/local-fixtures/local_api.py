@@ -25,6 +25,7 @@ AGENT = "conversation.ha_switchboard"
 FIXTURE_AREA = "Switchboard Fixture Lab"
 FIXTURE_LABELS = ("Switchboard Fixture", "Switchboard Actuator")
 FIXTURE_GROUP = "Switchboard Fixture Lights"
+FIXTURE_GROUP_UTTERANCE = f"Turn on the {FIXTURE_GROUP} group"
 GATEWAY_TIMEOUT_SECONDS = 10
 SCAN_POLL_INTERVAL_SECONDS = 0.5
 SCAN_POLL_ATTEMPTS = 24
@@ -243,6 +244,41 @@ def coverage_report(states: dict[str, dict], exposed: dict[str, dict]) -> dict:
         "unsupported": unsupported_surface_report(states, exposed),
         "rows": rows,
     }
+
+
+def named_group_acceptance(profile: Any, utterance: str = FIXTURE_GROUP_UTTERANCE) -> dict[str, Any]:
+    """Prove named-group profile representation and bounded selection safely.
+
+    This is intentionally a pure acceptance helper.  It consumes the already
+    sanitized profile object used by the gateway, returns only counts and
+    stable error codes, and never executes an operation or emits opaque/raw
+    entity references.
+    """
+    from ha_switchboard.batch import BatchRequestError, build_batch_group
+
+    named = [item for item in profile.groups if item.name == FIXTURE_GROUP]
+    report: dict[str, Any] = {
+        "group_name": FIXTURE_GROUP,
+        "group_count": len(named),
+        "group_present": len(named) == 1,
+        "group_valid": bool(named and named[0].valid),
+        "member_count": len(named[0].members) if len(named) == 1 else 0,
+        "selected": False,
+        "operation": None,
+        "error": None,
+    }
+    try:
+        selected = build_batch_group(utterance, profile)
+    except BatchRequestError as exc:
+        report["error"] = exc.code
+        return report
+    if selected is not None:
+        report.update(
+            selected=True,
+            operation=selected.operation,
+            selected_member_count=len(selected.members),
+        )
+    return report
 
 
 def config_entry_report(entries: list[dict]) -> dict:

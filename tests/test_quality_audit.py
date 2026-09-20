@@ -19,6 +19,16 @@ def test_repository_quality_audit_is_clean() -> None:
     assert check_release_boundary.quality_violations(ROOT) == []
 
 
+def test_fr016_traceability_records_legacy_migration_not_an_active_option() -> None:
+    traceability = (ROOT / "specs" / "001-ha-switchboard-completeness" / "traceability.md").read_text(
+        encoding="utf-8"
+    )
+    fr016 = next(line for line in traceability.splitlines() if line.startswith("| FR-016 |"))
+    assert "Implemented at source" in fr016
+    assert "persisted `supervisor_read_only` values are migrated" in fr016
+    assert "accepted inert option" not in fr016
+
+
 def test_audit_rejects_placeholders_broad_handlers_unbounded_loops_and_raw_ids(tmp_path: Path) -> None:
     _minimal_tree(tmp_path)
     (tmp_path / "app" / "ha_switchboard" / "bad.py").write_text(
@@ -93,3 +103,23 @@ def test_audit_rejects_prohibited_response_language(tmp_path: Path) -> None:
     )
     findings = check_release_boundary.quality_violations(tmp_path)
     assert any("prohibited generic response language" in item for item in findings)
+
+
+def test_audit_rejects_unbounded_local_harness_subprocesses(tmp_path: Path) -> None:
+    _minimal_tree(tmp_path)
+    tools = tmp_path / "tools"
+    bounded = """
+run_bounded() {
+  timeout --kill-after=5s "$@"
+}
+"""
+    (tools / "app-image-e2e.sh").write_text(bounded, encoding="utf-8")
+    (tools / "app-image-smoke.sh").write_text(
+        bounded + 'else\n    "$@"\n', encoding="utf-8"
+    )
+    (tools / "local-dev.sh").write_text(bounded, encoding="utf-8")
+
+    findings = check_release_boundary.quality_violations(tmp_path)
+
+    assert any("timeout fallback runs an unbounded command" in item for item in findings)
+    assert sum("missing bounded subprocess boundary" in item for item in findings) == 4

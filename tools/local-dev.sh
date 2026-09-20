@@ -10,11 +10,29 @@ ROOT_KEY="$(printf '%s' "$ROOT_DIR" | sha256sum | cut -c1-12)"
 STAGE_DIR="${HA_SWITCHBOARD_STAGE_DIR:-${TMPDIR:-/tmp}/ha-switchboard-local-${ROOT_KEY}}"
 APP_SLUG="local_ha_switchboard"
 WAIT_SECONDS="${HA_SWITCHBOARD_WAIT_SECONDS:-180}"
+DEVCONTAINER_TIMEOUT_SECONDS=300
+DOCKER_TIMEOUT_SECONDS=60
+CLEANUP_TIMEOUT_SECONDS=30
 LOCAL_HA_URL="${HA_SWITCHBOARD_LOCAL_HA_URL:-http://127.0.0.1:7123/}"
 LOCAL_OBSERVER_URL="${HA_SWITCHBOARD_LOCAL_OBSERVER_URL:-http://127.0.0.1:7357/}"
 HACS_REPOSITORY_URL="https://github.com/hacs/addons"
 LOCAL_CORE_CONFIG_DIR="/mnt/supervisor/homeassistant"
 LOCAL_OPTIONS_FILE="$ROOT_DIR/.env.local"
+TIMEOUT_BIN="$(command -v timeout || true)"
+
+run_bounded() {
+  local duration=$1
+  shift
+  [[ -n "$TIMEOUT_BIN" ]] || {
+    echo "GNU timeout is required to bound local Supervisor operations." >&2
+    return 127
+  }
+  "$TIMEOUT_BIN" --kill-after=5s "${duration}s" "$@"
+}
+
+docker_command() {
+  run_bounded "$DOCKER_TIMEOUT_SECONDS" docker "$@"
+}
 
 load_local_test_options() {
   [[ -f "$LOCAL_OPTIONS_FILE" ]] || return 0
@@ -110,6 +128,14 @@ require_existing_harness() {
 
 run_devcontainer() {
   if command -v devcontainer >/dev/null 2>&1; then
+    run_bounded "$DEVCONTAINER_TIMEOUT_SECONDS" devcontainer "$@"
+  else
+    run_bounded "$DEVCONTAINER_TIMEOUT_SECONDS" npx --yes @devcontainers/cli "$@"
+  fi
+}
+
+run_devcontainer_foreground() {
+  if command -v devcontainer >/dev/null 2>&1; then
     devcontainer "$@"
   else
     npx --yes @devcontainers/cli "$@"
@@ -118,6 +144,10 @@ run_devcontainer() {
 
 run_in_container() {
   run_devcontainer exec --workspace-folder "$STAGE_DIR" "$@"
+}
+
+run_in_container_foreground() {
+  run_devcontainer_foreground exec --workspace-folder "$STAGE_DIR" "$@"
 }
 
 container_workspace_dir() {
@@ -131,20 +161,20 @@ run_in_container_root() {
     echo "The local App devcontainer is not running." >&2
     return 1
   }
-  docker exec --user 0 \
+  docker_command exec --user 0 \
     -e "WORKSPACE_DIRECTORY=$(container_workspace_dir)" \
     "$container_id" "$@"
 }
 
 devcontainer_id() {
-  docker ps -aq --filter "label=devcontainer.local_folder=$STAGE_DIR" | head -n 1
+  docker_command ps -aq --filter "label=devcontainer.local_folder=$STAGE_DIR" | head -n 1
 }
 
 remove_devcontainer() {
   local container_id
   container_id="$(devcontainer_id)"
   [[ -n "$container_id" ]] || return 0
-  docker rm -f "$container_id" >/dev/null
+  docker_command rm -f "$container_id" >/dev/null
 }
 
 require_dev_reset_guard() {
@@ -169,7 +199,7 @@ snapshot_local_volume() {
     echo "Refusing to overwrite existing snapshot: $target" >&2
     return 1
   }
-  docker run --rm --volumes-from "$container_id" -v "$snapshot_dir:/backup" alpine:3.20 \
+  docker_command run --rm --volumes-from "$container_id" -v "$snapshot_dir:/backup" alpine:3.20 \
     sh -c 'tar -czf "/backup/$(basename "$1")" /mnt/supervisor' sh "$(basename -- "$target")" >/dev/null
   tar -tzf "$target" >/dev/null
   printf 'Verified local Supervisor/Core snapshot: %s\n' "$target"
@@ -190,7 +220,12 @@ reset_local_harness() {
   require_existing_harness
   run_in_container sh -lc "ha apps stop '$APP_SLUG' >/dev/null 2>&1 || true" || true
   remove_devcontainer
-  rm -rf -- "$STAGE_DIR"
+  # Keep test doubles injectable while bounding the real destructive cleanup.
+  if [[ "$(type -t rm)" == function ]]; then
+    rm -rf -- "$STAGE_DIR"
+  else
+    run_bounded "$CLEANUP_TIMEOUT_SECONDS" rm -rf -- "$STAGE_DIR"
+  fi
   echo "Local harness removed after verified snapshot: $target" >&2
 }
 
@@ -294,7 +329,7 @@ configure_app() {
   # Core has a scoped Supervisor token; only it can read the current options.
   # Docker -e NAME forwards exported values without embedding secrets in this
   # script, its arguments, or its output. The Core process is not restarted.
-  docker exec -i \
+  docker_command exec -i \
     -e HA_SWITCHBOARD_JEV_ENDPOINT \
     -e HA_SWITCHBOARD_JEV_API_KEY \
     -e HA_SWITCHBOARD_GATEWAY_TOKEN \
@@ -474,7 +509,7 @@ sync_stage() {
   }
 
   mkdir -p "$STAGE_DIR"
-  rsync -a --delete \
+  run_bounded "$DEVCONTAINER_TIMEOUT_SECONDS" rsync -a --delete \
     --exclude '.git' \
     --exclude '.env' \
     --exclude '.env.*' \
@@ -508,7 +543,7 @@ case "${1:-help}" in
     ;;
   start-ha)
     require_existing_harness
-    run_in_container supervisor_run
+    run_in_container_foreground supervisor_run
     ;;
   wait)
     require_existing_harness
@@ -575,7 +610,7 @@ case "${1:-help}" in
     ;;
   logs)
     require_existing_harness
-    run_in_container ha apps logs -f "$APP_SLUG"
+    run_in_container_foreground ha apps logs -f "$APP_SLUG"
     ;;
   stop)
     require_existing_harness

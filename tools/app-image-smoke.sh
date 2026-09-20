@@ -27,11 +27,11 @@ chmod 755 "$DATA_DIR"
 run_bounded() {
   local duration=$1
   shift
-  if [[ -n "$TIMEOUT_BIN" ]]; then
-    "$TIMEOUT_BIN" --kill-after=5s "$duration" "$@"
-  else
-    "$@"
-  fi
+  [[ -n "$TIMEOUT_BIN" ]] || {
+    echo "GNU timeout is required to bound smoke-test operations" >&2
+    return 127
+  }
+  "$TIMEOUT_BIN" --kill-after=5s "$duration" "$@"
 }
 
 engine_command() {

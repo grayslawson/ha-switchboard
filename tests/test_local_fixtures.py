@@ -157,6 +157,95 @@ def test_fixture_yaml_contains_all_supported_domains_and_bounded_group() -> None
     assert "light.switchboard_fixture_lamp" in text
 
 
+def test_named_fixture_group_is_in_profile_and_selects_only_explicitly() -> None:
+    from custom_components.ha_switchboard.opaque import adapter_ref
+    from ha_switchboard.profile import ProfileCompiler
+
+    api = load_module("local_fixture_api_named_group", FIXTURE / "local_api.py")
+    discovery = {
+        "entities": [
+            {
+                "entity_id": "light.switchboard_fixture_light",
+                "name": "Switchboard Fixture Light",
+                "domain": "light",
+                "exposed": True,
+                "available": True,
+                "operations": ["turn_on", "turn_off"],
+            },
+            {
+                "entity_id": "light.switchboard_fixture_lamp",
+                "name": "Switchboard Fixture Lamp",
+                "domain": "light",
+                "exposed": True,
+                "available": True,
+                "operations": ["turn_on", "turn_off"],
+            },
+        ],
+        "organization": {
+            "groups": [{
+                "adapter_ref": "adapter-fixture-lights-group",
+                "name": api.FIXTURE_GROUP,
+                "members": [
+                    adapter_ref("light.switchboard_fixture_light"),
+                    adapter_ref("light.switchboard_fixture_lamp"),
+                ],
+            }],
+        },
+    }
+    profile = ProfileCompiler().compile(discovery)
+
+    report = api.named_group_acceptance(profile)
+
+    assert report == {
+        "group_name": api.FIXTURE_GROUP,
+        "group_count": 1,
+        "group_present": True,
+        "group_valid": True,
+        "member_count": 2,
+        "selected": True,
+        "operation": "turn_on",
+        "error": None,
+        "selected_member_count": 2,
+    }
+    assert "switchboard_fixture" not in repr(report).lower()
+    assert "adapter-" not in repr(report).lower()
+
+
+def test_named_fixture_group_rejects_unknown_and_invalid_selection() -> None:
+    from custom_components.ha_switchboard.opaque import adapter_ref
+    from ha_switchboard.profile import ProfileCompiler
+
+    api = load_module("local_fixture_api_named_group_failures", FIXTURE / "local_api.py")
+    entity = {
+        "entity_id": "light.switchboard_fixture_light",
+        "name": "Switchboard Fixture Light",
+        "domain": "light",
+        "exposed": True,
+        "available": True,
+        "operations": ["turn_on", "turn_off"],
+    }
+    base = {"entities": [entity], "organization": {"groups": []}}
+    unknown_profile = ProfileCompiler().compile(base)
+    unknown = api.named_group_acceptance(unknown_profile)
+    assert unknown["group_present"] is False
+    assert unknown["error"] == "batch_group_unknown"
+    assert unknown["selected"] is False
+
+    invalid = {
+        "entities": [entity],
+        "organization": {"groups": [{
+            "adapter_ref": "adapter-fixture-lights-group",
+            "name": api.FIXTURE_GROUP,
+            "members": [adapter_ref("adapter-not-an-entity")],
+        }]},
+    }
+    invalid_report = api.named_group_acceptance(ProfileCompiler().compile(invalid))
+    assert invalid_report["group_present"] is True
+    assert invalid_report["group_valid"] is False
+    assert invalid_report["error"] == "batch_group_invalid"
+    assert invalid_report["selected"] is False
+
+
 def test_readme_labels_native_script_and_scene_outside_switchboard_matrix() -> None:
     text = (FIXTURE / "README.md").read_text(encoding="utf-8")
 

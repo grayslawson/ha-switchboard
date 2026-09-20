@@ -63,6 +63,24 @@ def test_app_manifest_declares_portable_least_privilege_defaults() -> None:
     assert "jev_endpoint:" not in options
 
 
+def test_gateway_mode_schema_exposes_only_adapter_only_and_documents_migration() -> None:
+    manifest = (ROOT / "app" / "config.yaml").read_text(encoding="utf-8")
+    schema = manifest.split("schema:", 1)[1].split("backup:", 1)[0]
+    assert 'gateway_mode: "adapter_only"' in manifest.split("options:", 1)[1].split("schema:", 1)[0]
+    assert 'gateway_mode: "list(adapter_only)"' in schema
+    assert "supervisor_read_only" not in schema
+
+    translation = (ROOT / "app" / "translations" / "en.yaml").read_text(encoding="utf-8")
+    gateway_translation = translation.split("  gateway_mode:\n", 1)[1].split("  jev_provider:", 1)[0]
+    assert "supervisor_read_only" in gateway_translation
+    assert "migrated automatically" in gateway_translation
+    assert "select" not in gateway_translation.lower()
+
+    for path in (ROOT / "README.md", ROOT / "app" / "DOCS.md"):
+        text = path.read_text(encoding="utf-8")
+        assert "not a current schema choice" in text
+
+
 def test_app_entrypoint_is_executable_under_custom_apparmor_profile() -> None:
     dockerfile = (ROOT / "app" / "Dockerfile").read_text(encoding="utf-8")
     apparmor = (ROOT / "app" / "apparmor.txt").read_text(encoding="utf-8")
