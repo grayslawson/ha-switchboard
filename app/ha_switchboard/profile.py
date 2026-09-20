@@ -12,6 +12,7 @@ from .protocol import (
     CapabilityKind,
     HomeProfile,
     LifecycleStatus,
+    ProfileGroup,
     ProfileSection,
     RiskClass,
     SectionId,
@@ -99,6 +100,106 @@ def _safe_metadata(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_safe_metadata(item) for item in value]
     return value
+
+
+def _compile_groups(
+    organization: Any,
+    entities: list[dict[str, Any]],
+    warnings: list[str],
+) -> tuple[ProfileGroup, ...]:
+    """Validate adapter-owned group refs before making them executable."""
+
+    if not isinstance(organization, Mapping):
+        return ()
+    raw_groups = organization.get("groups", ())
+    if not isinstance(raw_groups, (list, tuple)):
+        warnings.append("unsupported_group_collection")
+        return ()
+    groups: dict[str, dict[str, Any]] = {}
+    for raw in raw_groups[:256]:
+        if not isinstance(raw, Mapping):
+            warnings.append("unsupported_group_shape")
+            continue
+        group_ref = _text(raw.get("adapter_ref"))
+        name = _text(raw.get("name"))
+        members = raw.get("members", ())
+        if not group_ref or not name or not isinstance(members, (list, tuple)):
+            warnings.append("malformed_group")
+            continue
+        if group_ref in groups:
+            warnings.append("malformed_group")
+            groups[group_ref]["valid"] = False
+            continue
+        clean_members = tuple(_text(item) for item in members)
+        valid_shape = (
+            len(clean_members) <= 32
+            and all(clean_members)
+            and all("." not in item for item in clean_members)
+            and len(set(clean_members)) == len(clean_members)
+        )
+        groups[group_ref] = {"name": name, "members": clean_members, "valid": valid_shape}
+
+    entity_map: dict[str, dict[str, Any]] = {}
+    for entity in entities:
+        ref = _text(entity.get("adapter_ref"))
+        if ref and ref not in entity_map:
+            entity_map[ref] = entity
+        elif ref:
+            warnings.append("duplicate_entity_reference")
+    for group_ref in set(groups) & set(entity_map):
+        groups[group_ref]["valid"] = False
+        warnings.append("group_reference_collision")
+
+    resolved: dict[str, tuple[str, ...] | None] = {}
+    visiting: set[str] = set()
+
+    def resolve(group_ref: str) -> tuple[str, ...] | None:
+        if group_ref in resolved:
+            return resolved[group_ref]
+        group = groups[group_ref]
+        if not group["valid"] or group_ref in visiting or len(visiting) >= 32:
+            resolved[group_ref] = None
+            return None
+        visiting.add(group_ref)
+        members: list[str] = []
+        for member_ref in group["members"]:
+            if member_ref in groups:
+                nested = resolve(member_ref)
+                if nested is None:
+                    resolved[group_ref] = None
+                    break
+                members.extend(nested)
+                continue
+            entity = entity_map.get(member_ref)
+            if entity is None or not entity.get("exposed") or not entity.get("available"):
+                resolved[group_ref] = None
+                break
+            if _text(entity.get("risk_class"), "routine") != RiskClass.ROUTINE.value:
+                resolved[group_ref] = None
+                break
+            if not entity.get("operations"):
+                resolved[group_ref] = None
+                break
+            members.append(member_ref)
+            if len(members) > 32:
+                resolved[group_ref] = None
+                break
+        else:
+            if len(set(members)) != len(members) or not members:
+                resolved[group_ref] = None
+            else:
+                resolved[group_ref] = tuple(members)
+        visiting.discard(group_ref)
+        return resolved[group_ref]
+
+    compiled: list[ProfileGroup] = []
+    for group_ref, group in groups.items():
+        members = resolve(group_ref)
+        if members is None:
+            warnings.append("unsafe_group_membership")
+            members = ()
+        compiled.append(ProfileGroup(group_ref, group["name"], members, members != ()))
+    return tuple(compiled)
 
 
 class ProfileCompiler:
@@ -226,6 +327,7 @@ class ProfileCompiler:
             SectionId.COMPATIBILITY: _safe_metadata(snapshot.get("compatibility", [])),
             SectionId.ROUTE_POLICY: _safe_metadata(snapshot.get("route_policy", {})),
         }
+        groups = _compile_groups(snapshot.get("organization", {}), normalized_entities, warnings)
         section_status: dict[str, ProfileSection] = {}
         source_fingerprints: dict[str, str] = {}
         for section, value in sections_data.items():
@@ -249,6 +351,7 @@ class ProfileCompiler:
             source_fingerprints=source_fingerprints,
             section_status=section_status,
             capabilities=tuple(capabilities),
+            groups=groups,
             surfaces=surfaces,
             warnings=tuple(dict.fromkeys(warnings)),
             last_reconciled_at=timestamp,
@@ -271,6 +374,15 @@ def profile_fingerprint(profile: HomeProfile) -> str:
                 "risk": item.risk_class.value,
             }
             for item in profile.capabilities
+        ],
+        "groups": [
+            {
+                "ref": item.group_ref,
+                "name": item.name,
+                "members": item.members,
+                "valid": item.valid,
+            }
+            for item in profile.groups
         ],
     }
     return _fingerprint(payload)
@@ -301,6 +413,7 @@ def mark_sections_stale(profile: HomeProfile, sections: set[SectionId], reason: 
         source_fingerprints=profile.source_fingerprints,
         section_status=updated,
         capabilities=profile.capabilities,
+        groups=profile.groups,
         surfaces=profile.surfaces,
         warnings=profile.warnings,
         pending_invalidations=tuple(sorted(set(profile.pending_invalidations) | {reason[:128]})),

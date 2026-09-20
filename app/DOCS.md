@@ -340,8 +340,10 @@ select an opaque group of up to 32 members. The request may target the whole
 exposed domain or one unambiguous known area, floor, or label. The Core
 integration preflights every member, then executes and verifies them
 sequentially; partial completion is possible if a later member fails. Home
-Assistant group membership, mixed-domain groups, and other multi-device
-operations remain unsupported.
+Assistant group membership is supported for one explicitly named, validated
+group of exposed light, switch, and fan on/off members. Unknown, malformed,
+unsafe, unavailable, or unsupported members fail closed. Atomic, toggle,
+parameterized, and other multi-device operations remain unsupported.
 
 Clarification, parameter, and confirmation replies use the Core-local
 `ConversationContextStore`. A pending entry is short-lived, matched to the

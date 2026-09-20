@@ -352,6 +352,34 @@ class Capability:
 
 
 @dataclass(frozen=True, slots=True)
+class ProfileGroup:
+    """A sanitized, prevalidated Home Assistant group membership set."""
+
+    group_ref: str
+    name: str
+    members: tuple[str, ...] = ()
+    valid: bool = False
+
+    def __post_init__(self) -> None:
+        _bounded_text(self.group_ref, "group_ref", 128)
+        _bounded_text(self.name, "group_name", 256)
+        _bounded_list(list(self.members), "group_members", 32)
+        if any(not isinstance(item, str) or not item for item in self.members):
+            raise ValueError("group members must be opaque references")
+        if "." in self.group_ref or any("." in item for item in self.members):
+            raise ValueError("group references must not contain raw entity IDs")
+
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, Any]) -> "ProfileGroup":
+        return cls(
+            group_ref=str(payload["group_ref"]),
+            name=str(payload["name"]),
+            members=tuple(payload.get("members", ())),
+            valid=bool(payload.get("valid", False)),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class HomeProfile:
     profile_id: str
     revision: str
@@ -360,6 +388,7 @@ class HomeProfile:
     source_fingerprints: Mapping[str, str]
     section_status: Mapping[str, ProfileSection]
     capabilities: tuple[Capability, ...]
+    groups: tuple[ProfileGroup, ...] = ()
     surfaces: tuple[Mapping[str, Any], ...] = ()
     warnings: tuple[str, ...] = ()
     pending_invalidations: tuple[str, ...] = ()
@@ -371,6 +400,7 @@ class HomeProfile:
         _bounded_text(self.revision, "revision", 128)
         _bounded_text(self.created_at, "created_at", 64)
         _bounded_list(list(self.capabilities), "capabilities", MAX_PROFILE_CAPABILITIES)
+        _bounded_list(list(self.groups), "groups", 256)
         _bounded_list(list(self.warnings), "warnings", MAX_WARNINGS)
         _bounded_list(list(self.surfaces), "surfaces", 128)
 
@@ -398,6 +428,7 @@ class HomeProfile:
             source_fingerprints=dict(payload.get("source_fingerprints", {})),
             section_status=sections,
             capabilities=tuple(Capability.from_dict(item) for item in payload.get("capabilities", ())),
+            groups=tuple(ProfileGroup.from_dict(item) for item in payload.get("groups", ())),
             surfaces=tuple(payload.get("surfaces", ())),
             warnings=tuple(payload.get("warnings", ())),
             pending_invalidations=tuple(payload.get("pending_invalidations", ())),

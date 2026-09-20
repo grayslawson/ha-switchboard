@@ -53,10 +53,10 @@ evidence.
   Script and scene are native Core-only surfaces and are not Switchboard
   `activate` capabilities.
 - Explicit light, switch, and fan on/off batches can target the whole exposed
-  domain or one unambiguous known area, floor, or label. Batch execution stays
-  bounded at 32 targets and fail-closed for ambiguous, unavailable, or unsafe
-  members; Home Assistant group membership and other batch operations remain
-  outside the current boundary.
+  domain, one unambiguous known area, floor, or label, or one validated named
+  Home Assistant group. Batch execution stays bounded at 32 targets and
+  fail-closed for ambiguous, unavailable, or unsafe members; atomic, toggle,
+  and parameterized batch operations remain outside the current boundary.
 - The App dashboard now exposes keyboard landmarks, live announcements,
   diagnostic-log semantics, busy/disabled state, and reduced-motion behavior;
   browser-level accessibility inspection remains an open acceptance gate.

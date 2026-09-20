@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+import pytest
+
 from ha_switchboard.batch import BatchRequestError, build_batch_group
 from ha_switchboard.gateway import Gateway
 from ha_switchboard.jev_client import StaticJevClient
@@ -152,6 +154,49 @@ def test_batch_caps_at_32_members(tmp_path, sanitized_discovery):
         assert exc.code == "batch_too_large"
     else:
         raise AssertionError("oversized batch was accepted")
+
+
+def test_explicit_named_group_uses_only_valid_opaque_members(tmp_path, sanitized_discovery):
+    refs = [item["adapter_ref"] for item in sanitized_discovery["entities"][:2]]
+    sanitized_discovery["organization"]["groups"] = [{
+        "adapter_ref": "fixture-group-evening",
+        "name": "Evening lights",
+        "members": refs,
+    }]
+    gateway = _gateway(tmp_path, sanitized_discovery)
+
+    group = build_batch_group("Turn on the Evening lights group", gateway.active_profile)
+
+    assert group is not None
+    assert group.group_name == "Evening lights"
+    assert group.members == tuple(
+        item.capability_id
+        for item in gateway.active_profile.capabilities
+        if item.adapter_ref in refs and item.operation == "turn_on"
+    )
+    assert "light.living_room" not in repr(group.candidate())
+
+    gateway.jev = StaticJevClient(JevDecision(RouteKind.ROUTINE_CONTROL, Complexity.SIMPLE, group.group_id))
+    result = gateway.process(_request(gateway, "Turn on the Evening lights group"))
+    assert result.kind is ResultKind.EXECUTE
+    assert result.response_key == "batch_execute"
+    assert result.capability_ids == group.members
+
+
+def test_unknown_invalid_and_oversized_named_groups_fail_closed(tmp_path, sanitized_discovery):
+    refs = [item["adapter_ref"] for item in sanitized_discovery["entities"][:2]]
+    sanitized_discovery["organization"]["groups"] = [
+        {"adapter_ref": "fixture-group-invalid", "name": "Broken lights", "members": ["fixture-missing"]},
+        {"adapter_ref": "fixture-group-large", "name": "Large lights", "members": refs + ["fixture-extra"] * 32},
+    ]
+    gateway = _gateway(tmp_path, sanitized_discovery)
+
+    with pytest.raises(BatchRequestError, match="batch_group_unknown"):
+        build_batch_group("Turn on the Missing group", gateway.active_profile)
+    with pytest.raises(BatchRequestError, match="batch_group_invalid"):
+        build_batch_group("Turn on the Broken lights group", gateway.active_profile)
+    with pytest.raises(BatchRequestError, match="batch_group_invalid"):
+        build_batch_group("Turn on the Large lights group", gateway.active_profile)
 
 
 def test_core_batch_preflights_every_target_before_any_write():

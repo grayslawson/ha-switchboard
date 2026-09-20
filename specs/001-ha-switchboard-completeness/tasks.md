@@ -438,12 +438,13 @@ all user stories are implemented.
   expected skips; the preserve-first/local-acceptance focused suite passes
   32 tests with one opt-in live skip.
 - Latest multi-target/UI hardening: explicit light, switch, and fan on/off
-  batches can be narrowed by one unambiguous known area, floor, or label while
-  retaining the 32-target, preflight, availability, and sequential-execution
-  bounds. The App dashboard now includes keyboard landmarks, live status
-  announcements, diagnostic-log semantics, and busy/disabled state. Home
-  Assistant group membership and broader batch operations remain unsupported;
-  browser-level accessibility inspection remains open.
+  batches can target the whole exposed domain, one unambiguous known area,
+  floor, or label, or one validated named Home Assistant group while retaining
+  the 32-target, preflight, availability, and sequential-execution bounds. The
+  App dashboard now includes keyboard landmarks, live status announcements,
+  diagnostic-log semantics, and busy/disabled state. Atomic, toggle, and
+  parameterized batches remain unsupported; browser-level accessibility
+  inspection remains open.
 - Requirements-quality status is separate from implementation status:
   `checklists/completeness.md` is now **57 of 57 checked**. The final five
   criteria were closed against the current migration behavior, reviewed

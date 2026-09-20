@@ -35,3 +35,37 @@ def test_malformed_and_oversized_snapshots_fail_closed() -> None:
         compiler.compile({"entities": {"not": "a list"}})
     with pytest.raises(ValueError, match="entity count exceeds bound"):
         compiler.compile({"entities": [{} for _ in range(2_001)]})
+
+
+def test_compiler_validates_opaque_groups_and_keeps_invalid_groups_non_executable(discovery: dict) -> None:
+    refs = []
+    for entity in discovery["entities"][:2]:
+        entity["adapter_ref"] = f"adapter-{entity['entity_id'].replace('.', '-') }"
+        refs.append(entity["adapter_ref"])
+    discovery["organization"]["groups"] = [
+        {"adapter_ref": "adapter-group-evening", "name": "Evening lights", "members": refs},
+        {"adapter_ref": "adapter-group-unknown", "name": "Unknown", "members": ["adapter-missing"]},
+    ]
+
+    profile = ProfileCompiler().compile(discovery)
+
+    evening = next(item for item in profile.groups if item.name == "Evening lights")
+    unknown = next(item for item in profile.groups if item.name == "Unknown")
+    assert evening.valid and evening.members == tuple(refs)
+    assert not unknown.valid and unknown.members == ()
+    assert all("entity_id" not in item for item in profile.to_dict()["groups"])
+
+
+def test_compiler_rejects_duplicate_and_cyclic_group_members(discovery: dict) -> None:
+    discovery["entities"][0]["adapter_ref"] = "adapter-light-one"
+    discovery["organization"]["groups"] = [
+        {"adapter_ref": "adapter-group-a", "name": "A group", "members": ["adapter-group-b"]},
+        {"adapter_ref": "adapter-group-b", "name": "B group", "members": ["adapter-group-a"]},
+        {"adapter_ref": "adapter-group-duplicate", "name": "Duplicate group", "members": ["adapter-light-one", "adapter-light-one"]},
+        {"adapter_ref": "adapter-group-collision", "name": "Collision A", "members": ["adapter-light-one"]},
+        {"adapter_ref": "adapter-group-collision", "name": "Collision B", "members": ["adapter-light-one"]},
+    ]
+
+    profile = ProfileCompiler().compile(discovery)
+
+    assert all(not item.valid for item in profile.groups)

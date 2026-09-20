@@ -23,10 +23,11 @@ class BatchGroup:
     members: tuple[str, ...]
     floor: str | None = None
     label: str | None = None
+    group_name: str | None = None
 
     def candidate(self) -> dict[str, object]:
         noun = self.domain.replace("_", " ") + "s"
-        scope_name = self.area or self.floor or self.label
+        scope_name = self.group_name or self.area or self.floor or self.label
         scope = f" in {scope_name}" if scope_name else ""
         return {
             "capability_id": self.group_id,
@@ -37,6 +38,7 @@ class BatchGroup:
             "area": self.area,
             "floor": self.floor,
             "label": self.label,
+            "group": self.group_name,
             "member_count": len(self.members),
             "available": True,
             "risk_class": "routine",
@@ -56,6 +58,50 @@ def build_batch_group(utterance: str, profile: HomeProfile) -> BatchGroup | None
     """Recognize explicit English plural on/off commands; never infer scope."""
 
     text = " ".join(utterance.casefold().split())
+    explicit_group = bool(re.search(r"\b(?:group|groups)\b", text))
+    group_matches = [
+        item for item in profile.groups
+        if re.search(_WORD.format(re.escape(item.name.casefold())), text)
+    ]
+    if explicit_group:
+        if len(group_matches) != 1:
+            raise BatchRequestError("batch_group_unknown" if not group_matches else "batch_scope_ambiguous")
+        group = group_matches[0]
+        if not group.valid:
+            raise BatchRequestError("batch_group_invalid")
+        action = re.search(r"\b(?:turn|switch)\b.*?\b(on|off)\b", text)
+        if action is None:
+            raise BatchRequestError("batch_scope_ambiguous")
+        operation = f"turn_{action.group(1)}"
+        matching = sorted(
+            (
+                item for item in profile.capabilities
+                if item.adapter_ref in group.members
+                and item.operation == operation
+                and item.exposed
+            ),
+            key=lambda item: item.capability_id,
+        )
+        if len(matching) != len(group.members):
+            raise BatchRequestError("batch_target_unavailable")
+        if len(matching) > MAX_BATCH_TARGETS or len({item.adapter_ref for item in matching}) != len(matching):
+            raise BatchRequestError("batch_scope_ambiguous")
+        if any(not item.available or item.risk_class.value != "routine" for item in matching):
+            raise BatchRequestError("batch_target_unavailable")
+        key = f"{profile.revision}:{group.group_ref}:{operation}"
+        group_id = "batch-" + hashlib.sha256(key.encode()).hexdigest()[:24]
+        return BatchGroup(
+            group_id,
+            matching[0].domain if len({item.domain for item in matching}) == 1 else "mixed",
+            operation,
+            None,
+            tuple(item.capability_id for item in matching),
+            group_name=group.name,
+        )
+    if group_matches:
+        # A group name without the explicit group marker is not allowed to
+        # silently change the meaning of an existing area/label request.
+        group_matches = []
     domains = [domain for plural, domain in _DOMAINS.items() if re.search(_WORD.format(plural), text)]
     if not domains:
         return None
