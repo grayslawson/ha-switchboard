@@ -27,7 +27,7 @@ CONFIG_DIGESTS = {
 }
 
 
-def _registry_with_labels(revision: str):
+def _registry_with_labels(revision: str, *, config_metadata=None, index_digest=IMAGE_DIGEST):
     registry = object.__new__(MODULE.Registry)
     registry.repository = "grayslawson/ha-switchboard"
 
@@ -41,12 +41,14 @@ def _registry_with_labels(revision: str):
                     }
                     for arch in ("amd64", "arm64")
                 ]},
-                IMAGE_DIGEST,
+                index_digest,
             )
         for arch in ("amd64", "arm64"):
             if path.endswith(f"/manifests/{PLATFORM_DIGESTS[arch]}"):
                 return {"config": {"digest": CONFIG_DIGESTS[arch]}}, None
             if path.endswith(f"/blobs/{CONFIG_DIGESTS[arch]}"):
+                if config_metadata is not None:
+                    return config_metadata, None
                 return {
                     "config": {
                         "Labels": {
@@ -88,6 +90,28 @@ def test_release_image_gate_requires_revision_and_architecture() -> None:
         registry.verify("0.1.3", {"amd64", "arm64"}, SOURCE_URL)
     with pytest.raises(ValueError, match="at least one architecture"):
         registry.verify("0.1.3", set(), SOURCE_URL, "forgejo-commit-1")
+
+
+def test_release_image_gate_rejects_malformed_oci_config_metadata() -> None:
+    registry = _registry_with_labels("forgejo-commit-1", config_metadata={"config": []})
+    with pytest.raises(ValueError, match="no OCI config metadata"):
+        registry.verify(
+            "0.1.3",
+            {"amd64", "arm64"},
+            SOURCE_URL,
+            "forgejo-commit-1",
+        )
+
+
+def test_release_image_gate_rejects_missing_immutable_index_digest() -> None:
+    registry = _registry_with_labels("forgejo-commit-1", index_digest=None)
+    with pytest.raises(ValueError, match="published image digest"):
+        registry.verify(
+            "0.1.3",
+            {"amd64", "arm64"},
+            SOURCE_URL,
+            "forgejo-commit-1",
+        )
 
 
 def _provenance_record() -> dict:

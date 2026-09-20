@@ -58,7 +58,6 @@ HOST_COMMAND_TIMEOUT_SECONDS = 10
 RESTART_ACTION_TIMEOUT_SECONDS = 30
 RESTART_WAIT_SECONDS = 60
 RESTART_CYCLE_TIMEOUT_SECONDS = 120
-RESTART_POLL_INTERVAL_SECONDS = 0.5
 
 # Keep this copy deliberately independent of the integration package: this
 # file is executed inside the Core container, where the worktree is absent.
@@ -711,31 +710,33 @@ def startup_check() -> dict:
 
 
 def wait_for_local_component(component: str, *, timeout: float = RESTART_WAIT_SECONDS) -> None:
-    """Wait for one local Supervisor-managed component with a hard deadline."""
+    """Check one local Supervisor-managed component once within a deadline.
+
+    Supervisor's restart command is the synchronization boundary for this
+    disposable probe.  A second status read is useful evidence, but retrying
+    it in a loop can turn a failed restart into an unbounded readiness poll.
+    """
     if component not in {"app", "core"}:
         raise RuntimeError(f"unsupported local component: {component}")
-    deadline = time.monotonic() + bounded_timeout(timeout, RESTART_WAIT_SECONDS)
-    while time.monotonic() < deadline:
-        remaining = deadline - time.monotonic()
-        command = [
-            "docker", "exec", LOCAL_SUPERVISOR_CONTAINER,
-            "ha", "apps", "info", "--raw-json", LOCAL_APP_SLUG,
-        ] if component == "app" else [
-            "docker", "exec", LOCAL_SUPERVISOR_CONTAINER,
-            "ha", "core", "info", "--raw-json",
-        ]
-        try:
-            output = run_host_command(
-                command, timeout=min(HOST_COMMAND_TIMEOUT_SECONDS, max(0.1, remaining))
-            )
-            payload = json.loads(output)
-            state = payload.get("data", {}).get("state")
-            if state in ({"started"} if component == "app" else {"running"}):
-                return
-        except RuntimeError:
-            pass
-        time.sleep(min(RESTART_POLL_INTERVAL_SECONDS, max(0.0, remaining)))
-    raise RuntimeError(f"local {component} did not become ready within the bounded wait")
+    command = [
+        "docker", "exec", LOCAL_SUPERVISOR_CONTAINER,
+        "ha", "apps", "info", "--raw-json", LOCAL_APP_SLUG,
+    ] if component == "app" else [
+        "docker", "exec", LOCAL_SUPERVISOR_CONTAINER,
+        "ha", "core", "info", "--raw-json",
+    ]
+    output = run_host_command(
+        command,
+        timeout=min(HOST_COMMAND_TIMEOUT_SECONDS, bounded_timeout(timeout, RESTART_WAIT_SECONDS)),
+    )
+    try:
+        payload = json.loads(output)
+        state = payload["data"]["state"]
+    except (KeyError, TypeError, json.JSONDecodeError):
+        raise RuntimeError(f"local {component} readiness evidence was invalid") from None
+    expected = "started" if component == "app" else "running"
+    if state != expected:
+        raise RuntimeError(f"local {component} was not ready after the bounded restart check")
 
 
 def restart_cycle(*, allow_restart: bool) -> dict:
@@ -797,13 +798,17 @@ def restart_cycle(*, allow_restart: bool) -> dict:
     )
     wait_for_local_component("app", timeout=remaining(RESTART_WAIT_SECONDS))
     after_app_target = inspect_local_supervisor()
-    if after_app_target.get("volume_identity_fingerprint") != target.get("volume_identity_fingerprint"):
+    if not target_identity_is_verified(after_app_target) or safe_target_evidence(after_app_target) != safe_target_evidence(target):
         raise RuntimeError("Refusing to continue after local Supervisor volume identity changed")
     after_app_lifecycle = run_core_fixture_command("lifecycle")
+    after_app_options, after_app_options_private = read_local_app_options()
     app_restart_profile_settled = lifecycle_profile_is_settled(after_app_lifecycle)
     app_restart_preserved = (
         before_lifecycle["config_entry"] == after_app_lifecycle["config_entry"]
         and before_lifecycle["core"] == after_app_lifecycle["core"]
+        and before_lifecycle["gateway"] == after_app_lifecycle["gateway"]
+        and before_options == after_app_options
+        and before_options_private == after_app_options_private
         and app_restart_profile_settled
     )
     if not app_restart_preserved:
@@ -817,7 +822,7 @@ def restart_cycle(*, allow_restart: bool) -> dict:
     )
     wait_for_local_component("core", timeout=remaining(RESTART_WAIT_SECONDS))
     after_target = inspect_local_supervisor()
-    if after_target.get("volume_identity_fingerprint") != target.get("volume_identity_fingerprint"):
+    if not target_identity_is_verified(after_target) or safe_target_evidence(after_target) != safe_target_evidence(target):
         raise RuntimeError("Refusing to report success after local Supervisor volume identity changed")
     after_lifecycle = run_core_fixture_command("lifecycle")
     after_options, after_options_private = read_local_app_options()
@@ -836,8 +841,8 @@ def restart_cycle(*, allow_restart: bool) -> dict:
         "options_started": after_options.get("options_present") is True
         and after_options.get("app_started") is True,
         "volume_identity": (
-            after_app_target.get("volume_identity_fingerprint") == target.get("volume_identity_fingerprint")
-            and after_target.get("volume_identity_fingerprint") == target.get("volume_identity_fingerprint")
+            safe_target_evidence(after_app_target) == safe_target_evidence(target)
+            and safe_target_evidence(after_target) == safe_target_evidence(target)
         ),
     }
     return {

@@ -28,6 +28,7 @@ WORKFLOW = ROOT / ".forgejo" / "workflows" / "build-app.yml"
 # bounded state reads, initial/cross-user WebSocket setup, the bounded
 # pipeline-list call, and the hard-capped natural-expiry wait, with headroom.
 FOLLOW_UP_NATURAL_EXPIRY_SUBPROCESS_TIMEOUT_SECONDS = 520
+FOLLOW_UP_SUBPROCESS_TIMEOUT_SECONDS = 45
 
 
 def _fixture_api():
@@ -493,6 +494,43 @@ def test_fixture_identity_fingerprint_is_bounded_and_secret_free() -> None:
     assert api.fixture_identity_fingerprint({"sensor.unrelated": {"state": "ok"}}) is None
 
 
+def test_restart_readiness_check_is_one_shot_and_bounded(monkeypatch) -> None:
+    api = _fixture_api()
+    calls: list[tuple[list[str], float]] = []
+    slept = False
+
+    def fake_run(args, *, timeout, **kwargs):
+        calls.append((args, timeout))
+        return '{"data":{"state":"running"}}'
+
+    def fail_sleep(_seconds):
+        nonlocal slept
+        slept = True
+        raise AssertionError("restart readiness must not poll")
+
+    monkeypatch.setattr(api, "run_host_command", fake_run)
+    monkeypatch.setattr(api.time, "sleep", fail_sleep)
+
+    api.wait_for_local_component("core", timeout=999)
+
+    assert len(calls) == 1
+    assert calls[0][0][-3:] == ["core", "info", "--raw-json"]
+    assert calls[0][1] == api.HOST_COMMAND_TIMEOUT_SECONDS
+    assert slept is False
+
+
+def test_restart_readiness_rejects_invalid_or_unready_one_shot_evidence(monkeypatch) -> None:
+    api = _fixture_api()
+
+    monkeypatch.setattr(api, "run_host_command", lambda *args, **kwargs: "not-json")
+    with pytest.raises(RuntimeError, match="readiness evidence was invalid"):
+        api.wait_for_local_component("app")
+
+    monkeypatch.setattr(api, "run_host_command", lambda *args, **kwargs: '{"data":{"state":"stopped"}}')
+    with pytest.raises(RuntimeError, match="was not ready"):
+        api.wait_for_local_component("app")
+
+
 def _run_live_follow_up_fixture() -> dict:
     """Run the preserved Core-side probe and retain only its sanitized report."""
     fixture_script = ROOT / "tools" / "local-fixtures" / "local_api.py"
@@ -512,6 +550,14 @@ def _run_live_follow_up_fixture() -> dict:
             # output, nor the sanitized report contains the value.
             forwarded_outer_env.extend(["--env", name])
             forwarded_inner_env.extend(["--env", name])
+    probe_env = {
+        "PATH": os.environ.get("PATH", ""),
+        **{
+            name: os.environ[name]
+            for name in forwarded_names
+            if name in os.environ
+        },
+    }
     completed = subprocess.run(
         [
             "docker",
@@ -533,8 +579,9 @@ def _run_live_follow_up_fixture() -> dict:
         timeout=(
             FOLLOW_UP_NATURAL_EXPIRY_SUBPROCESS_TIMEOUT_SECONDS
             if os.environ.get("HA_SWITCHBOARD_RUN_FOLLOW_UP_NATURAL_EXPIRY") == "1"
-            else 45
+            else FOLLOW_UP_SUBPROCESS_TIMEOUT_SECONDS
         ),
+        env=probe_env,
         check=False,
     )
     # Never put captured output in an assertion: fixture diagnostics must not
@@ -583,10 +630,12 @@ def test_live_follow_up_forwards_token_by_environment_name_only(monkeypatch) -> 
     monkeypatch.setenv("HA_SWITCHBOARD_FOLLOW_UP_SECOND_USER_ACCESS_TOKEN", supplied_token)
     monkeypatch.setenv("HA_SWITCHBOARD_RUN_FOLLOW_UP", "1")
 
-    def fake_run(command, *, input, capture_output, timeout, check):
+    def fake_run(command, *, input, capture_output, timeout, env, check):
         assert supplied_token not in " ".join(command)
         assert supplied_token.encode() not in input
-        assert timeout == 45
+        assert timeout == FOLLOW_UP_SUBPROCESS_TIMEOUT_SECONDS
+        assert set(env) == {"PATH", "HA_SWITCHBOARD_FOLLOW_UP_SECOND_USER_ACCESS_TOKEN", "HA_SWITCHBOARD_RUN_FOLLOW_UP"}
+        assert env["HA_SWITCHBOARD_FOLLOW_UP_SECOND_USER_ACCESS_TOKEN"] == supplied_token
         return SimpleNamespace(
             stdout=b'{"command":"follow-up","different_user":{"status":"proved"}}\n',
             stderr=b"",
@@ -605,8 +654,9 @@ def test_live_follow_up_natural_expiry_timeout_covers_bounded_probe(monkeypatch)
     monkeypatch.setenv("HA_SWITCHBOARD_RUN_FOLLOW_UP_NATURAL_EXPIRY", "1")
     captured: dict[str, object] = {}
 
-    def fake_run(command, *, input, capture_output, timeout, check):
+    def fake_run(command, *, input, capture_output, timeout, env, check):
         captured["timeout"] = timeout
+        assert set(env) == {"PATH", "HA_SWITCHBOARD_RUN_FOLLOW_UP", "HA_SWITCHBOARD_RUN_FOLLOW_UP_NATURAL_EXPIRY"}
         return SimpleNamespace(
             stdout=b'{"command":"follow-up","expiry":{"status":"unavailable"}}\n',
             stderr=b"",

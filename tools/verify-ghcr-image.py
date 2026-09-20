@@ -246,7 +246,10 @@ class Registry:
             config, _ = self.json(
                 f"{prefix}/blobs/{config_digest}", "application/json"
             )
-            labels = config.get("config", {}).get("Labels", {})
+            config_metadata = config.get("config")
+            if not isinstance(config_metadata, dict):
+                raise ValueError(f"linux/{architecture} image has no OCI config metadata")
+            labels = config_metadata.get("Labels", {})
             if not isinstance(labels, dict):
                 raise ValueError(f"linux/{architecture} image has no OCI labels")
             platforms[architecture] = {
