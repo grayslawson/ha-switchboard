@@ -76,6 +76,7 @@ def test_release_publication_requires_static_and_external_metadata_evidence() ->
     mirror = _workflow("mirror-public.yml")
     assert mirror.index("Validate release workflows before publication") < mirror.index("Push public master")
     assert mirror.index("Validate exported Core metadata with Hassfest") < mirror.index("Push public master")
+    assert mirror.index("Gate release on matching multi-architecture App image") < mirror.index("Push public master")
     assert mirror.index("Verify public mirror ref") < mirror.index("Validate published Core metadata with HACS")
     assert mirror.index("Validate published Core metadata with HACS") < mirror.index("Create or update GitHub release from tag")
     assert "actionlint -config-file" in mirror
@@ -89,11 +90,22 @@ def test_release_workflows_use_exact_source_revision_and_release_paths() -> None
     build = _workflow("build-app.yml")
     mirror = _workflow("mirror-public.yml")
     assert '--revision "${GITHUB_SHA}"' in build
-    assert '--revision "$GITHUB_SHA"' in mirror
+    assert '--revision "$source_revision"' in mirror
     assert 'test "${ref_name#v}" = "$version"' in build
     assert 'test "${ref_name#v}" = "$version"' in mirror
     assert 'git merge-base --is-ancestor "$tag_commit" "$master_ref"' in mirror
+    assert 'test "$tag_commit" = "$source_revision"' in mirror
+    assert '--revision "$source_revision"' in mirror
+    assert 'test "$(git -C "$RUNNER_TEMP/public" show -s --format=%B HEAD)" = "Mirror Forgejo $source_revision"' in mirror
     assert "push --force github HEAD:master" in mirror
+
+
+def test_release_tag_runtime_gate_is_anchored_before_public_tag_push() -> None:
+    mirror = _workflow("mirror-public.yml")
+    e2e_step = mirror.index("- name: Run bounded App image E2E gate before tag publication")
+    public_push = mirror.index("- name: Push public master")
+    assert e2e_step < public_push
+    assert mirror.index("bash tools/app-image-e2e.sh", e2e_step) < public_push
 
 
 def test_release_source_versions_are_consistent() -> None:

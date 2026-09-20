@@ -53,7 +53,7 @@ evidence.
 - `tools/local-dev.sh` preserves the local Supervisor/Core volume by default;
   reset is guarded by a verified snapshot and explicit confirmation.
 - Supervisor discovery retry is bounded and reuses a sanitized payload.
-- Latest full pytest result: `410 passed, 4 skipped`. The skips require the absent
+- Latest full pytest result: `411 passed, 4 skipped`. The skips require the absent
   Home Assistant runtime/config-flow dependency in the host worktree and are
   the opt-in native-miss probe; they are not source or live proof by
   themselves.

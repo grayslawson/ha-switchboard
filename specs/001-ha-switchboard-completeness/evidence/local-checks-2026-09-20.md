@@ -9,11 +9,12 @@ provider bodies, or volume paths are retained here.
 
 | Gate | Result | Evidence |
 | --- | --- | --- |
-| Full source tests | passed with expected skips | `python3 -m pytest -q tests` — `410 passed, 4 skipped`. Skips are the unavailable host ConversationEntity/config-flow dependencies and the two opt-in live fixture probes. |
+| Full source tests | passed with expected skips | `python3 -m pytest -q tests` — `411 passed, 4 skipped`. Skips are the unavailable host ConversationEntity/config-flow dependencies and the two opt-in live fixture probes. |
 | Focused follow-up/recovery/provenance tests | passed with expected opt-in skips | `python3 -m pytest -q tests/test_restart_acceptance.py tests/test_preserve_first_runtime.py tests/test_local_fixtures.py tests/test_e2e_harness.py tests/test_native_miss_runtime.py tests/test_ghcr_revision_gate.py` — `54 passed, 2 skipped`. |
-| Release/quality/packaging tests | passed | `python3 -m pytest -q tests/test_release_acceptance.py tests/test_release_boundary.py tests/test_quality_audit.py tests/test_release_workflows.py tests/test_packaging.py tests/test_standalone_runtime.py` — `37 passed`. |
+| Release/quality/packaging/provenance tests | passed | `python3 -m pytest -q tests/test_release_acceptance.py tests/test_release_boundary.py tests/test_quality_audit.py tests/test_release_workflows.py tests/test_packaging.py tests/test_standalone_runtime.py tests/test_ghcr_revision_gate.py` — `46 passed`. |
 | Compilation and quality | passed | `python3 -m compileall -q app/ha_switchboard custom_components/ha_switchboard tools tests`; `python3 tools/check_release_boundary.py --quality`; `git diff --check`. |
 | Workflow lint | passed | `actionlint -config-file .github/actionlint.yaml .forgejo/workflows/*.yml`. |
+| Publication workflow hardening | passed locally | `python3 -m pytest -q tests/test_release_workflows.py` — `9 passed`; the mirror workflow now requires the exact source/tag revision, commit marker, GHCR gate, and App-image E2E gate before public publication. |
 | Public export | passed | `python3 tools/ha-switchboard-export-public.py <temporary-directory>` and exported-tree boundary check — `public export: PASS (109 tracked files)`. |
 | Provenance gate hardening | passed locally | `python3 -m pytest -q tests/test_ghcr_revision_gate.py` — `8 passed`; the verifier now supports sanitized offline records, anonymous read-only registry validation, immutable digests, exact architecture sets, and release/image/source revision agreement. It does not turn the currently mismatched public `v0.2.0` artifact into a valid candidate. |
 

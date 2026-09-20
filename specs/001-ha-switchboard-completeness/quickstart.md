@@ -14,7 +14,7 @@ the same unrun lifecycle, provider, security-enforcement, and release gates.
 The source metadata in this worktree currently agrees on App/Core version
 `0.2.0`; that is source evidence, not an installed or published artifact.
 
-The latest source-level pytest run was `410 passed, 4 skipped`; the skips
+The latest source-level pytest run was `411 passed, 4 skipped`; the skips
 require the Home Assistant runtime/config-flow dependency in the host
 worktree or are explicitly opt-in live fixture probes. No command in this
 documentation pass reset, removed, or
@@ -40,6 +40,10 @@ preserve-first App-only rebuild and subsequent read-only `restart-cycle`
 check retained the same volume, config entry, fixture count, and active
 profile. This is not proof of the opt-in App/Core restart cycle; that remains
 closed by default and requires an explicit disposable-harness authorization.
+The separate sanitized readiness record in
+`evidence/live-gate-readiness-2026-09-20.md` confirms that no non-owner access
+token is available for the cross-user probe and that the protected restart
+preflight is ready but was not authorized.
 
 **Additional sanitized fixture evidence (2026-09-20):** The host-side
 `startup` check passed without mutation. The idempotent Assist exposure repair
@@ -236,7 +240,7 @@ full provider responses in the evidence record.
   package, Core manifest, and changelog.
 - Local source checks: `python3 -m compileall -q app/ha_switchboard
   custom_components/ha_switchboard tools` passed; the full test suite passed
-  (`410 passed, 4 skipped`), with two skips requiring the Home Assistant
+  (`411 passed, 4 skipped`), with two skips requiring the Home Assistant
   runtime/config-flow dependency and two opt-in live fixture probes; the
   focused release, workflow, boundary, and quality tests also passed (`37
   passed`). The sanitized public export

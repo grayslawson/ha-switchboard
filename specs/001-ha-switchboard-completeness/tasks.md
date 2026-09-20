@@ -358,7 +358,7 @@ all user stories are implemented.
 - [x] T146 Add final App/Core contract compatibility check and version policy in app/config.yaml, custom_components/ha_switchboard/manifest.json, pyproject.toml, and app/ha_switchboard/__init__.py
 - [x] T147 Add final static checks for response-language prohibition, secret redaction, raw-ID boundary, and documentation drift in tests/test_quality_audit.py
 - [ ] T148 Run the complete quickstart acceptance guide and record sanitized evidence in specs/001-ha-switchboard-completeness/quickstart.md (current local source/image/startup/scan/native/follow-up evidence is recorded in `evidence/local-checks-2026-09-20.md`; lifecycle, provider, security-enforcement, and external-release portions remain)
-- [ ] T149 Complete source, image, runtime, HACS, Hassfest, mirror, GHCR, and live-canary release gates from specs/001-ha-switchboard-completeness/contracts/release-validation.md (local source/image/runtime/package/workflow gates pass; Hassfest passes on the pinned local export; the fail-closed GHCR provenance verifier is hardened and tested; external credentials, matching published-artifact provenance, HACS, mirror, multi-architecture, and installed-canary evidence remain)
+- [ ] T149 Complete source, image, runtime, HACS, Hassfest, mirror, GHCR, and live-canary release gates from specs/001-ha-switchboard-completeness/contracts/release-validation.md (local source/image/runtime/package/workflow gates pass; Hassfest passes on the pinned local export; the fail-closed GHCR provenance verifier is hardened and tested; the mirror workflow now gates App E2E and exact source/tag/commit-marker agreement before publication; external credentials, matching published-artifact provenance, HACS, mirror, multi-architecture, and installed-canary evidence remain)
 - [x] T150 Review all external HACS/App repository/provider dependencies and record pending acceptance separately in docs/RELEASE.md (external acceptance remains a release gate)
 - [ ] T151 Publish the feature-complete release only after protected-master ancestry, public mirror, tag, image digest, architecture, and live App/Core evidence agree in .forgejo/workflows/mirror-public.yml (not yet authorized by evidence because T149 external gates remain open)
 
@@ -372,17 +372,19 @@ all user stories are implemented.
 - Ledger state: **148 of 153 tasks checked; 5 remain open**. The checked
   tasks represent implemented source/artifacts with focused evidence; they do
   not imply that the public release gates are complete.
-- Source evidence: the latest `python3 -m pytest -q` passes **410 tests with 4
+- Source evidence: the latest `python3 -m pytest -q` passes **411 tests with 4
   expected skips**. Two skips require the Home Assistant 2026.9
   runtime/config-flow dependency; the other two are opt-in live follow-up and
   native-miss probes. The focused release/quality/packaging suite passes **37
-  tests**, and the focused restart/follow-up/provenance suite passes **54
+  tests**; the expanded release/provenance suite passes **46 tests**; and the
+  focused restart/follow-up/provenance suite passes **54
   tests with 2 opt-in skips**. The opt-in live follow-up probe passes with its
   unavailable second-user/natural-TTL gates reported explicitly. Compile, quality,
   release-boundary, shell-syntax, and whitespace checks pass.
 - Release-source evidence: the focused release, boundary, quality, packaging,
-  and workflow checks pass (**37 tests**); the sanitized public export contains
-  109 tracked files and passes its boundary check. The release workflows now
+  workflow, and provenance checks pass (**46 tests**); the sanitized public
+  export contains 109 tracked files and passes its boundary check. The release
+  workflows now
   enforce the `app/CHANGELOG.md` version marker, Hassfest-compatible
   conversation-agent translations, and the bounded App-image E2E gate before
   tag publication. These checks do not close the external publication gates.
@@ -404,6 +406,8 @@ all user stories are implemented.
 - T148 now has separate sanitized local evidence records at
   `specs/001-ha-switchboard-completeness/evidence/local-quickstart-2026-09-20.md`
   and `specs/001-ha-switchboard-completeness/evidence/local-checks-2026-09-20.md`,
+  plus the live-gate readiness record at
+  `specs/001-ha-switchboard-completeness/evidence/live-gate-readiness-2026-09-20.md`,
   plus the external validation record at
   `specs/001-ha-switchboard-completeness/evidence/external-validation-2026-09-20.md`,
   `specs/001-ha-switchboard-completeness/evidence/provenance-checks-2026-09-20.md`,
@@ -427,7 +431,7 @@ all user stories are implemented.
 - Latest follow-up hardening: the opt-in native-miss harness now accepts only
   the disposable local gateway root (no production host, alternate port,
   path, credentials, query, or fragment), and its regression test is included
-  in the 410-test source result. T059 now also supports explicitly supplied
+  in the 411-test source result. T059 now also supports explicitly supplied
   second-user and natural-TTL opt-ins without changing the safe default or
   persisting credentials.
 - Requirements-quality status is separate from implementation status:

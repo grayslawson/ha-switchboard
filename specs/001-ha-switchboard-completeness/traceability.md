@@ -47,7 +47,7 @@ The current checkout has focused source/test evidence for these safe boundaries:
   `tests/test_server.py::test_supervisor_discovery_retry_is_bounded` cover the
   source-level behavior.
 
-The latest full repository test run on 2026-09-20 was `410 passed, 4 skipped`. The
+The latest full repository test run on 2026-09-20 was `411 passed, 4 skipped`. The
 skips were the Home Assistant config-flow/runtime tests because the
 `homeassistant` package is not installed in this host worktree; they are not
 source-test proof. A separate read-only check of the preserved local

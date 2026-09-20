@@ -53,10 +53,17 @@ jobs:
           test "$ref_name" = "v${ref_name#v}"
           git fetch --no-tags origin +refs/heads/master:refs/remotes/origin/master
           tag_commit="$(git rev-parse "refs/tags/$ref_name^{commit}")"
+          source_revision="${GITHUB_SHA:-}"
+          if [ -z "$source_revision" ]; then
+            source_revision="${FORGEJO_SHA:-}"
+          fi
+          test -n "$source_revision"
+          test "$source_revision" = "$(git rev-parse 'HEAD^{commit}')"
+          test "$tag_commit" = "$source_revision"
           master_ref=refs/remotes/origin/master
           master_commit="$(git rev-parse "$master_ref^{commit}")"
           git merge-base --is-ancestor "$tag_commit" "$master_ref"
-          echo "release tag $ref_name ($tag_commit) is on protected master ($master_commit)"
+          echo "release tag $ref_name ($source_revision) is on protected master ($master_commit)"
       - name: Verify release source versions are consistent
         shell: bash
         run: |
@@ -122,12 +129,17 @@ jobs:
           test -n "$version"
           ref_name="${FORGEJO_REF_NAME:-${GITHUB_REF_NAME:-}}"
           test "${ref_name#v}" = "$version"
+          source_revision="${GITHUB_SHA:-}"
+          if [ -z "$source_revision" ]; then
+            source_revision="${FORGEJO_SHA:-}"
+          fi
+          test -n "$source_revision"
           for attempt in {1..18}; do
             if python3 tools/verify-ghcr-image.py \
               --image ghcr.io/grayslawson/ha-switchboard \
               --tag "$version" \
               --source-url https://github.com/grayslawson/ha-switchboard \
-              --revision "$GITHUB_SHA" \
+              --revision "$source_revision" \
               2>"$RUNNER_TEMP/ghcr-verify-error.log"; then
               break
             fi
@@ -138,22 +150,36 @@ jobs:
             fi
             sleep 10
           done
+      - name: Run bounded App image E2E gate before tag publication
+        if: ${{ forgejo.ref_type == 'tag' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tools/app-image-e2e.sh
       - name: Push public master
         env:
           GH_MIRROR_TOKEN: ${{ secrets.GH_MIRROR_TOKEN }}
         run: |
           set -euo pipefail
+          ref_type="${FORGEJO_REF_TYPE:-${GITHUB_REF_TYPE:-branch}}"
+          ref_name="${FORGEJO_REF_NAME:-${GITHUB_REF_NAME:-}}"
+          source_revision="${GITHUB_SHA:-}"
+          if [ -z "$source_revision" ]; then
+            source_revision="${FORGEJO_SHA:-}"
+          fi
+          test -n "$ref_name"
+          test -n "$source_revision"
           auth_header="$(printf 'x-access-token:%s' "$GH_MIRROR_TOKEN" | base64 | tr -d '\n')"
           git -C "$RUNNER_TEMP/public" init --initial-branch=master
           git -C "$RUNNER_TEMP/public" config user.name "ha-switchboard mirror"
           git -C "$RUNNER_TEMP/public" config user.email "mirror@users.noreply.github.com"
           git -C "$RUNNER_TEMP/public" add --all
-          git -C "$RUNNER_TEMP/public" commit -m "Mirror Forgejo ${GITHUB_SHA}"
+          git -C "$RUNNER_TEMP/public" commit -m "Mirror Forgejo ${source_revision}"
           git -C "$RUNNER_TEMP/public" remote add github https://github.com/grayslawson/ha-switchboard.git
-          if [ "${FORGEJO_REF_TYPE:-${GITHUB_REF_TYPE:-branch}}" = "tag" ]; then
+          if [ "$ref_type" = "tag" ]; then
             # A release tag is immutable. A rerun must not silently replace
             # the source revision behind an already published GitHub release.
-            git -C "$RUNNER_TEMP/public" -c "http.extraheader=AUTHORIZATION: basic ${auth_header}" push github "HEAD:refs/tags/${GITHUB_REF_NAME}"
+            git -C "$RUNNER_TEMP/public" -c "http.extraheader=AUTHORIZATION: basic ${auth_header}" push github "HEAD:refs/tags/${ref_name}"
           else
             git -C "$RUNNER_TEMP/public" -c "http.extraheader=AUTHORIZATION: basic ${auth_header}" push --force github HEAD:master
           fi
@@ -164,8 +190,17 @@ jobs:
         run: |
           set -euo pipefail
           expected_sha="$(git -C "$RUNNER_TEMP/public" rev-parse HEAD)"
-          if [ "$EXPECTED_REF_TYPE" = "tag" ]; then
-            remote_ref="refs/tags/$EXPECTED_REF_NAME"
+          source_revision="${GITHUB_SHA:-}"
+          if [ -z "$source_revision" ]; then
+            source_revision="${FORGEJO_SHA:-}"
+          fi
+          test -n "$source_revision"
+          test "$(git -C "$RUNNER_TEMP/public" show -s --format=%B HEAD)" = "Mirror Forgejo $source_revision"
+          ref_type="${FORGEJO_REF_TYPE:-${GITHUB_REF_TYPE:-branch}}"
+          ref_name="${FORGEJO_REF_NAME:-${GITHUB_REF_NAME:-}}"
+          test -n "$ref_name"
+          if [ "$ref_type" = "tag" ]; then
+            remote_ref="refs/tags/$ref_name"
           else
             remote_ref="refs/heads/master"
           fi
@@ -193,12 +228,6 @@ jobs:
             --volume "$RUNNER_TEMP/public:/github/workspace:ro" \
             ghcr.io/hacs/action@sha256:dc92fdad2f6ffbe74bffb7269d781ea8e064f52d9bb486cdf3925d74e7ab6ebf
           unset INPUT_GITHUB_TOKEN
-      - name: Run bounded App image E2E gate before tag publication
-        if: ${{ forgejo.ref_type == 'tag' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash tools/app-image-e2e.sh
       - name: Create or update GitHub release from tag
         if: ${{ forgejo.ref_type == 'tag' }}
         env:
