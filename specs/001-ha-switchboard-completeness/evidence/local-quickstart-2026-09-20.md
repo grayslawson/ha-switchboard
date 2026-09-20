@@ -11,7 +11,7 @@ remain open. No production Home Assistant endpoint was used.
 ## Scope and baseline
 
 - Worktree: `/home/deploy/.local/state/pd-nixos/worktrees/ha-switchboard-ci-hardening`.
-- Source revision at this reconciliation: `799efc422b372ecc8117336a904e426126889e80`;
+- Source revision at this reconciliation: `fef192becba60bf3bc3c0b1d40ba7000bd4ef8e2`;
   unrelated concurrent changes and existing commits were preserved.
 - Source versions agree at App/Core `0.2.0` in the checked-in metadata.
 - Local harness: Supervisor container `busy_cohen`, loopback Supervisor port
@@ -25,10 +25,16 @@ remain open. No production Home Assistant endpoint was used.
 | Gate | Status | Command and sanitized result |
 | --- | --- | --- |
 | Compile | passed | Current `python3 -m compileall -q app/ha_switchboard custom_components/ha_switchboard tools tests` — exit `0`. |
-| Source tests | passed with skips | `python3 -m pytest -q tests` — exit `0`, `431 passed, 4 skipped`. Skips were the unavailable host ConversationEntity/config-flow dependencies and the two explicitly opt-in live fixture probes. |
+| Source tests | passed with skips | `python3 -m pytest -q tests` — exit `0`, `437 passed, 4 skipped`. Skips were the unavailable host ConversationEntity/config-flow dependencies and the two explicitly opt-in live fixture probes. |
 | Compilation/quality | passed | `python3 -m compileall -q app/ha_switchboard custom_components/ha_switchboard tools tests` — exit `0`; `python3 tools/check_release_boundary.py --quality` — `quality audit: PASS`. |
 | Public export | passed locally | `python3 tools/ha-switchboard-export-public.py <temporary-directory>` — `public export: PASS (203 tracked files)`; exported-tree boundary — `release boundary: PASS`. The temporary export contained 125 regular files. This is not HACS, public-mirror, GHCR, or release proof. |
-| Local App image smoke | previously recorded | The earlier local-image result remains a separate sanitized record; it was not rerun in this read-only reconciliation. It is not public-image proof. |
+| Local App image smoke | passed | `bash tools/app-image-smoke.sh` — exit `0`; local image build, root-only data preparation, non-root runtime, profile persistence, recreate/restore, and stale-profile fail-closed behavior passed. This is not public-image proof. |
+
+The bounded local App-image E2E harness also passed after this reconciliation:
+`bash tools/app-image-e2e.sh` — exit `0`; source marker, non-root runtime,
+ingress boundary, token protection, and bounded cleanup passed. The WSL host
+reported AppArmor unavailable because enforcement was not requested and no
+host AppArmor interface was available; no enforcement claim is made.
 
 ## Preserved local runtime gates
 

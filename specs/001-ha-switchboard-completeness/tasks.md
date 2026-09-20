@@ -432,9 +432,9 @@ all user stories are implemented.
 - Latest follow-up hardening: the opt-in native-miss harness now accepts only
   the disposable local gateway root (no production host, alternate port,
   path, credentials, query, or fragment), and its regression test is included
-  in the 411-test source result. T059 now also supports explicitly supplied
+  in the current source result. T059 now also supports explicitly supplied
   second-user and natural-TTL opt-ins without changing the safe default or
-  persisting credentials. The current source result is 431 tests with 4
+  persisting credentials. The current source result is 437 tests with 4
   expected skips; the preserve-first/local-acceptance focused suite passes
   32 tests with one opt-in live skip.
 - Requirements-quality status is separate from implementation status:
