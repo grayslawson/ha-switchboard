@@ -1,40 +1,40 @@
 configuration:
   ingress_only:
     name: Restrict the Web UI to Home Assistant
-    description: Keep this on. It blocks direct access to the dashboard; Home Assistant's Open Web UI button still works.
+    description: Keep this on for Home Assistant OS to declare the Supervisor-ingress UI mode. The dashboard/static UI requires ingress; direct Core/API calls use the gateway token.
   gateway_mode:
     name: Home Assistant connection mode
     description: Adapter only. The Core integration discovers devices and performs actions. Older supervisor_read_only settings are migrated automatically.
   jev_provider:
     name: Jev provider
-    description: Select disabled, direct TypeSafe System One, OpenRouter Decisions, or a compatible typed Jev service. Match jev_endpoint to the selected provider.
+    description: Select disabled, direct TypeSafe System One, OpenRouter Decisions, or a compatible typed Jev service. TypeSafe and OpenRouter have defaults; a compatible service needs its own endpoint.
   jev_endpoint:
     name: Jev decision URL
-    description: For TypeSafe, use its base URL or /v1/systemone; for OpenRouter use https://openrouter.ai/api/alpha/decisions; for compatible use a service that returns Switchboard's typed decision contract. This is not a chat-completions URL.
+    description: Optional for TypeSafe or OpenRouter, which use their documented defaults. For a custom TypeSafe URL use its base or /v1/systemone; OpenRouter must use https://openrouter.ai/api/alpha/decisions; compatible services must return Switchboard's typed decision contract, not chat completions.
   jev_model:
     name: Jev model
-    description: Use typesafe/jev-1.13 for OpenRouter Decisions. A compatible typed Jev service may ignore this value; direct TypeSafe runtime clients use their own model input.
+    description: Use typesafe/jev-1.13 for OpenRouter Decisions; TypeSafe has its documented default unless overridden. A compatible typed Jev service may ignore this value.
   jev_api_key:
     name: Jev API key
     description: Key for the Jev decision service. For OpenRouter Jev, enter your OpenRouter API key. This is never a Home Assistant token.
   fallback_provider:
     name: Fallback provider
-    description: Optional second route for requests Jev cannot complete. Disabled sends nothing; OpenRouter and OpenAI-compatible use the generic chat-completions adapter; Typed HTTP requires a Switchboard-compatible handoff endpoint.
+    description: Optional second route for requests Jev cannot complete. Disabled sends nothing; OpenRouter and OpenAI-compatible use the generic OpenAI-compatible chat-completions adapter; Typed HTTP requires a Switchboard-compatible handoff endpoint.
   fallback_endpoint:
     name: Fallback URL
-    description: OpenRouter defaults to its chat-completions URL when blank and accepts a base URL or full path. For Typed HTTP, enter the URL of your compatible handoff service.
+    description: OpenRouter may be blank and uses its chat-completions URL; openai_compatible requires your provider base URL or full /chat/completions URL. Typed HTTP requires its compatible handoff URL.
   fallback_model:
     name: Fallback model
-    description: OpenRouter chat-model ID to use for fallback requests. Required when the fallback provider is OpenRouter.
+    description: Chat model ID sent to the OpenAI-compatible fallback. Required for both openrouter and openai_compatible; this is separate from the Jev model.
   fallback_api_key:
     name: Fallback API key
-    description: Key for the fallback service. This may be the same OpenRouter key as Jev, but it is configured separately.
+    description: Optional Bearer key for the fallback service when it requires authentication. Keep it separate from the Jev key; it may have the same value.
   gateway_token:
     name: Core-to-App token
-    description: Long random token that protects the gateway API. Enter the same token in the HA Switchboard integration. This is not a model-provider key.
+    description: Long random token for direct Core/API calls. Enter the same value in the HA Switchboard integration; Supervisor ingress already authenticates the Web UI. This is not a model-provider key.
   profile_refresh_minutes:
     name: Full profile refresh interval
-    description: Minutes for the Core worker's complete profile refresh loop. Use Scan now for an explicit first scan or recovery request, then wait for profile status to become active.
+    description: Minutes for the Core worker's complete profile refresh loop. Scan now only requests a scan; wait for profile status active and no pending sections before control requests.
   privacy_mode:
     name: Where requests may be sent
-    description: Local only blocks hosted services. Jev hosted allowed permits hosted Jev but no hosted fallback. Hosted allowed also permits an explicitly configured hosted fallback.
+    description: local_only blocks hosted Jev and hosted fallback; jev_hosted_allowed permits hosted Jev only; hosted_allowed also permits an explicitly configured hosted fallback.

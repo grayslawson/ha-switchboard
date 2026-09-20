@@ -100,20 +100,32 @@ fallback, which returns bounded prose or one proposal rather than executing
 Home Assistant services.
 
 The provider contracts remain distinct. Direct TypeSafe System One uses the
-`/v1/systemone` contract with runtime `JEV_PROVIDER`, `JEV_BASE_URL` or
-`JEV_ENDPOINT`, `JEV_API_KEY`, and `JEV_MODEL`; OpenRouter Decisions uses the
-exact alpha Decisions URL with the App's `jev_model` and `jev_api_key`; and a
-non-OpenRouter Jev URL must return Switchboard's typed `decision` envelope.
+`/v1/systemone` contract and can be selected by the App with
+`jev_provider: typesafe` or by a separately managed runtime using `JEV_PROVIDER`,
+`JEV_BASE_URL` or `JEV_ENDPOINT`, `JEV_API_KEY`, and `JEV_MODEL`; OpenRouter
+Decisions uses the exact alpha Decisions URL with the App's `jev_model` and
+`jev_api_key`; and a non-OpenRouter Jev URL must return Switchboard's typed
+`decision` envelope. TypeSafe and OpenRouter have documented endpoint defaults;
+the generic typed route requires an endpoint.
 Native OpenRouter Decisions is a parameter-free route/capability chooser. It
 does not extract brightness, volume, temperature, or HVAC values. The
 `openrouter` or `openai_compatible` fallback is a generic OpenAI-compatible
-chat-completions adapter
-configured with `fallback_endpoint`, `fallback_model`, and
-`fallback_api_key`; `typed_http` is a separate Switchboard handoff contract.
+chat-completions adapter. OpenRouter supplies its default endpoint; a generic
+compatible service requires a base URL or full `/chat/completions` URL. Both
+require `fallback_model` and accept an optional `fallback_api_key`;
+`typed_http` is a separate Switchboard handoff contract.
 Fallback is disabled by default; `local_only` blocks hosted routes,
 `jev_hosted_allowed` permits hosted Jev only, and `hosted_allowed` is required
 for hosted fallback. None of these routes can execute Home Assistant services
 directly.
+
+The App Web UI is an operator console. It reports liveness, readiness, profile
+reconciliation, provider configuration/circuit state, and redacted diagnostics;
+provider reachability is not automatically probed and secrets or raw provider
+payloads are never displayed. **Scan Home Assistant now** acknowledges a
+request and polls for completion, but `active` profile state and a healthy
+`/healthz` endpoint do not by themselves prove provider compatibility, Assist
+pipeline selection, publication, or a live App/Core canary.
 
 Exposed script and scene routines may appear as sanitized profile rows, but
 their `activate` operation is currently rejected by the Core execution

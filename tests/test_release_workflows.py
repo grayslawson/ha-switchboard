@@ -21,6 +21,10 @@ def test_release_workflows_fetch_full_history_and_gate_master_ancestry() -> None
         assert 'git merge-base --is-ancestor "$tag_commit" "$master_ref"' in text
         assert 'if: ${{ forgejo.ref_type == \'tag\' }}' in text
 
+    build = _workflow("build-app.yml")
+    assert 'test "$source_revision" = "$(git rev-parse \'HEAD^{commit}\')"' in build
+    assert 'test "$tag_commit" = "$source_revision"' in build
+
 
 def test_build_ancestry_gate_precedes_ghcr_login_and_public_tag_gate_precedes_push() -> None:
     build = _workflow("build-app.yml")
@@ -28,6 +32,9 @@ def test_build_ancestry_gate_precedes_ghcr_login_and_public_tag_gate_precedes_pu
     assert build.index("Verify release source versions are consistent") < build.index("Log in to GitHub Container Registry")
     assert 'test "${ref_name#v}" = "$version"' in build
     assert build.index('test "${ref_name#v}" = "$version"') < build.index("Log in to GitHub Container Registry")
+    assert build.index("Run bounded App image E2E before versioned image publication") < build.index(
+        "Push versioned multi-architecture image"
+    )
 
     mirror = _workflow("mirror-public.yml")
     assert mirror.index("Verify release tag is an ancestor") < mirror.index("Push public master")
@@ -105,7 +112,7 @@ def test_release_tag_runtime_gate_is_anchored_before_public_tag_push() -> None:
     e2e_step = mirror.index("- name: Run bounded App image E2E gate before tag publication")
     public_push = mirror.index("- name: Push public master")
     assert e2e_step < public_push
-    assert mirror.index("bash tools/app-image-e2e.sh", e2e_step) < public_push
+    assert mirror.index("timeout --kill-after=10s 300s bash tools/app-image-e2e.sh", e2e_step) < public_push
 
 
 def test_release_source_versions_are_consistent() -> None:

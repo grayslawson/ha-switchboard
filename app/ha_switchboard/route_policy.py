@@ -154,6 +154,7 @@ def select_route(
         route
         for route in registry.routes
         if required_response in route.response_kinds
+        and route.supports(complexity, privacy_mode)
         and registry.circuit_allows(route.route_id)
         and route_allowed(
             privacy_mode=privacy_mode,

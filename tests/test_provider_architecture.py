@@ -98,6 +98,33 @@ def test_typesafe_contract_rejects_extra_answer_fields_without_transport_retry(m
         TypeSafeJevClient("http://127.0.0.1/v1").decide(_request())
 
 
+def test_jev_transport_retries_timeout_without_retrying_malformed_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = 0
+
+    def urlopen(_request, timeout):
+        nonlocal calls
+        calls += 1
+        if calls < 3:
+            raise TimeoutError()
+        return _Response({"decision": {
+            "route": "routine_control", "capability_id": "cap-light-on",
+            "confidence": 0.99, "ambiguity": 0.01,
+        }})
+
+    monkeypatch.setattr("ha_switchboard.jev_client.urllib.request.urlopen", urlopen)
+    monkeypatch.setattr("ha_switchboard.jev_client.time.sleep", lambda _delay: None)
+    decision = HttpJevClient("http://127.0.0.1:8090/decide").decide(_request())
+    assert decision.capability_id == "cap-light-on"
+    assert calls == 3
+
+
+def test_jev_timeout_and_query_endpoint_bounds_are_rejected() -> None:
+    with pytest.raises(ValueError, match="timeout"):
+        HttpJevClient("http://127.0.0.1:8090/decide", timeout=0.1)
+    with pytest.raises(ValueError, match="query"):
+        HttpJevClient("http://127.0.0.1:8090/decide?token=secret")
+
+
 def test_typesafe_extracts_bounded_numeric_parameter(monkeypatch: pytest.MonkeyPatch) -> None:
     request = replace(
         _request(),

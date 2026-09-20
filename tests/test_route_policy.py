@@ -69,6 +69,27 @@ def test_incompatible_privacy_mode_has_no_silent_fallback() -> None:
         )
 
 
+def test_disabled_route_is_not_selected_even_when_its_budget_matches() -> None:
+    registry = RouteRegistry.from_dict({
+        "routes": [{
+            "route_id": "disabled",
+            "availability": "disabled",
+            "response_kinds": ["prose_response"],
+            "complexity_ceiling": "reasoning",
+            "privacy_modes": ["local_only"],
+        }]
+    })
+    with pytest.raises(RoutePolicyError):
+        select_route(
+            registry,
+            complexity=Complexity.SIMPLE,
+            privacy_mode=PrivacyMode.LOCAL_ONLY,
+            required_response=ResponseKind.PROSE_RESPONSE,
+            max_latency_ms=500,
+            max_cost=1,
+        )
+
+
 def test_declared_route_order_is_preserved_over_cost() -> None:
     registry = RouteRegistry.from_dict(
         {

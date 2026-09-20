@@ -59,7 +59,7 @@ These are not inferred from local tests, metadata, or a local image.
 | --- | --- | --- |
 | Hassfest | pending | No local `hassfest` executable is installed (`command -v hassfest` unavailable). The repository workflow invokes the pinned Hassfest GitHub Action against the exported public tree; that public Action run was not performed in this worker. |
 | HACS | pending | No local `hacs` executable is installed (`command -v hacs` unavailable). HACS validation is defined by the public-tree GitHub Action workflow and was not run against a published mirror. |
-| GHCR immutable image | blocked/pending | Read-only `python3 tools/verify-ghcr-image.py --image ghcr.io/grayslawson/ha-switchboard --tag 0.2.0 --source-url https://github.com/grayslawson/ha-switchboard --revision fcff6e86e729f34d4d01201cafebe3bf86f9cddd` exited `1` with the authoritative reason `registry username and token environment variables are required`. No registry credentials were supplied or printed; the local image cannot satisfy the GHCR multi-architecture/source-label gate. |
+| GHCR immutable image | blocked/pending | The earlier read-only probe recorded `registry username and token environment variables are required`; that observation predates the current verifier hardening. The verifier now supports credential-free offline records and anonymous read-only registry access when available, but no current published-artifact proof was attempted here. No registry credentials were supplied or printed. |
 | Public mirror and tag | pending | Read-only `git ls-remote --heads --tags github refs/heads/master refs/tags/v0.2.0` exited `0` and found both refs, but neither remote ref matched the local source revision. No ref was pushed or changed. The read-only GitHub release query returned `v0.2.0`, non-draft/non-prerelease, with zero assets; matching source/tag/mirror provenance remains unproven. |
 | Protected-master ancestry | pending | This evidence pass ran on `codex/fix-apparmor-runtime`, not protected `master`; no tag or publication operation was attempted. The release workflow requires protected-master ancestry before publication. |
 | AppArmor enforcement parity | pending | The bounded image E2E explicitly reported `AppArmor enforcement: not requested`; source/image checks passed, but installed enforcement was not proven. |
@@ -79,3 +79,18 @@ These are not inferred from local tests, metadata, or a local image.
 - No Home Assistant/Supervisor volume or environment reset, restart, removal,
   or recreation was performed.
 - Worker-owned changed file: `specs/001-ha-switchboard-completeness/evidence/release-gates-2026-09-20.md` only.
+
+## Reconciliation note — current acceptance tooling
+
+The historical GHCR credential error above is superseded as an implementation
+constraint by `t149-t151-provenance-gate-audit-2026-09-20.md`: the offline
+provenance path is sanitized and network-free, while the registry path remains
+read-only and fails closed on missing or mismatched digest, source, revision, or
+architecture facts. It does not establish current public publication.
+
+The current release workflow also binds a tag event to both the checked-out
+revision and protected-master ancestry before image publication, and invokes
+the pre-publication App image E2E through a 300-second timeout with a
+10-second kill grace period. These are local source/workflow gates only; T149
+and T151 remain pending for matching public mirror/tag/GHCR/HACS and installed
+App/Core canary evidence.

@@ -257,14 +257,14 @@ guide is in [app/DOCS.md](app/DOCS.md).
 | `ingress_only` | Keep `true`. The WebUI is ingress-only; direct `/v1/*` Core calls require the matching `gateway_token` and do not require this option to be disabled. |
 | `gateway_mode` | Use `adapter_only`. `supervisor_read_only` is a legacy persisted value; startup migration normalizes it to `adapter_only` and records an internal compatibility marker. It is not a current schema choice. |
 | `jev_provider` | `disabled` by default; choose `typesafe`, `openrouter`, or `compatible` to match the Jev wire contract. |
-| `jev_endpoint` | For `typesafe`, use a TypeSafe base URL or `/v1/systemone`; for `openrouter`, use `https://openrouter.ai/api/alpha/decisions`; for `compatible`, use a service that returns Switchboard's typed decision contract. A public image may predate the native adapter; verify the target tag. |
-| `jev_model` | `typesafe/jev-1.13` for OpenRouter Decisions or the configured TypeSafe model; compatible typed services may ignore it. |
-| `jev_api_key` | Credential for the configured Jev service; leave blank with no endpoint. This is not the gateway token. |
+| `jev_endpoint` | Optional for `typesafe` and `openrouter`, which use documented defaults when blank. For `typesafe`, a custom value may be its base URL or `/v1/systemone`; `openrouter` requires `https://openrouter.ai/api/alpha/decisions`; `compatible` requires a service that returns Switchboard's typed decision contract. A public image may predate the native adapter; verify the target tag. |
+| `jev_model` | `typesafe/jev-1.13` for OpenRouter Decisions, or the documented TypeSafe model by default; compatible typed services may ignore it. |
+| `jev_api_key` | Credential for the configured Jev service; leave blank when the service does not require one. This is not the gateway token. |
 | `gateway_token` | A long random bearer token for the Core integration and other direct callers. Use the same value in the Integration configuration. |
 | `profile_refresh_minutes` | Use `15`; accepted range is 1–1440. The Core integration reads this App setting and schedules complete-profile reconciliation. Use **Scan Home Assistant now** for an explicit scan. |
 | `privacy_mode` | Use `local_only` by default. `jev_hosted_allowed` is for a working hosted Jev adapter; `hosted_allowed` also permits hosted downstream routes. |
 | `fallback_provider` | `disabled` by default. Choose `openrouter` or `openai_compatible` for the generic OpenAI-compatible chat-completions adapter, or `typed_http` for a Switchboard-compatible route endpoint. |
-| `fallback_endpoint` / `fallback_model` / `fallback_api_key` | Configure the chosen fallback separately from Jev. For OpenRouter, use `https://openrouter.ai/api/v1/chat/completions`, a chat-model ID, and its API key. A typed HTTP route uses the Switchboard handoff contract. The legacy persisted `fallback_base_url` name is migrated to `fallback_endpoint`; it is not a current App option. |
+| `fallback_endpoint` / `fallback_model` / `fallback_api_key` | Configure the chosen fallback separately from Jev. `openrouter` may leave the URL blank and uses `https://openrouter.ai/api/v1/chat/completions`; `openai_compatible` requires a provider base URL or full `/chat/completions` URL. Both require a chat-model ID and accept an optional provider API key. The legacy persisted `fallback_base_url` name is migrated to `fallback_endpoint`; it is not a current App option. |
 
 Keep credentials in Supervisor options or the deployment's runtime secret mechanism. Never commit them to Compose files, fixtures, logs, or the repository.
 
@@ -289,11 +289,12 @@ public image may predate this adapter; verify the target tag. Do not use
 [OpenRouter API specification](https://openrouter.ai/openapi.json),
 [Typesafe model page](https://openrouter.ai/typesafe), and the [App guide](app/DOCS.md).
 
-Fallback is opt-in. The `openrouter` fallback is a generic OpenAI-compatible
-chat-completions adapter; its default endpoint is
-`https://openrouter.ai/api/v1/chat/completions`, and it requires
-`fallback_model` plus `fallback_api_key` when the service requires
-authentication. It also requires `privacy_mode: hosted_allowed`;
+Fallback is opt-in. The `openrouter` and `openai_compatible` fallbacks use the
+generic OpenAI-compatible chat-completions adapter. OpenRouter supplies the
+default endpoint; a compatible provider needs its own base URL or full
+`/chat/completions` URL. Both require `fallback_model`; `fallback_api_key` is
+only needed when the service requires authentication. A hosted route also
+requires `privacy_mode: hosted_allowed`;
 `jev_hosted_allowed` permits hosted Jev but not a hosted fallback. You can
 instead configure a local typed HTTP route subject to the
 same bounded proposal checks. Switchboard cannot safely call an arbitrary Home
@@ -307,7 +308,7 @@ The current gateway exposes a deliberately small HTTP surface:
 
 ```text
 GET  /healthz                 liveness
-GET  /readyz                  profile and monitor readiness
+GET  /readyz                  profile and provider readiness
 GET  /v1/profile/status       profile revision and stale sections
 POST /v1/profile/reconcile   atomically replace the sanitized profile
 POST /v1/profile/invalidate   mark affected profile sections stale
@@ -392,7 +393,7 @@ See [app/DOCS.md](app/DOCS.md) for App-specific behavior and [docs/RELEASE.md](d
 
 The repository intentionally does not claim more than the current implementation provides:
 
-- The direct TypeSafe System One client, OpenRouter Decisions adapter, and generic typed Jev client have different wire contracts. The Supervisor App options select OpenRouter Decisions by its exact URL or a generic typed Jev endpoint; direct TypeSafe selection is an explicitly managed runtime environment path rather than an App-store option.
+- The direct TypeSafe System One client, OpenRouter Decisions adapter, and generic typed Jev client have different wire contracts. The Supervisor App options select all three explicitly; TypeSafe and OpenRouter have documented defaults, while a generic typed Jev service requires its own endpoint.
 - The native OpenRouter adapter handles parameter-free controls only. Parameterized controls have Core-side schemas and validation, but the current question flow does not collect their values; a compatible typed service or future value-extraction stage must supply them.
 - Explicit plural on/off requests for exposed lights, switches, or fans can form a bounded group of at most 32 targets. Core preflights every member and executes sequentially; a mid-batch failure can leave earlier verified actions in place. Other multi-device actions are not yet supported.
 - Clarification, parameter, and confirmation follow-ups are stored only in the Core integration's bounded in-memory context store. Entries are matched to the Home Assistant conversation and user, expire after a short TTL, and are consumed before the follow-up can authorize execution. The current unit coverage proves the store lifecycle; a complete live Assist/E2E acceptance run remains open.

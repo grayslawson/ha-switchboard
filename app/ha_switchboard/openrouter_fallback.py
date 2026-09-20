@@ -14,12 +14,14 @@ import logging
 import os
 import socket
 import threading
+import time
 import urllib.error
 import urllib.request
 from typing import Any, Mapping
 from urllib.parse import urlsplit
 
 from .handoff import HandoffError, HandoffInvalidResponse
+from .http_security import RetryPolicy
 from .protocol import HandoffRequest, ResponseKind
 from .redaction import (
     SensitiveDataError,
@@ -39,8 +41,29 @@ MAX_CHOICE_TEXT = 512
 MAX_PROSE = 4_000
 MAX_REQUEST_BYTES = 64_000
 MAX_API_KEY = 512
+_RETRY_POLICY = RetryPolicy(attempts=2, base_delay=0.25, max_delay=2.0)
+_RETRYABLE_HTTP_STATUS = frozenset({408, 429, 500, 502, 503, 504})
 
 _LOG = logging.getLogger("ha_switchboard.openai_compatible")
+
+
+def _read_provider_response(request: urllib.request.Request, *, timeout: float) -> bytes:
+    last_error: Exception | None = None
+    for attempt in range(_RETRY_POLICY.attempts + 1):
+        try:
+            with open_provider_url(request, timeout=timeout) as response:
+                return response.read(MAX_RESPONSE_BYTES + 1)
+        except urllib.error.HTTPError as exc:
+            if exc.code not in _RETRYABLE_HTTP_STATUS or not _RETRY_POLICY.can_retry(attempt):
+                raise
+            last_error = exc
+        except (urllib.error.URLError, TimeoutError, socket.timeout, OSError) as exc:
+            if not _RETRY_POLICY.can_retry(attempt):
+                raise
+            last_error = exc
+        time.sleep(_RETRY_POLICY.delay(attempt))
+    assert last_error is not None
+    raise last_error
 
 
 class OpenRouterFallbackError(HandoffError):
@@ -139,11 +162,10 @@ class OpenAICompatibleFallbackAdapter:
         if key:
             headers["Authorization"] = f"Bearer {key}"
         try:
-            with open_provider_url(
+            raw = _read_provider_response(
                 urllib.request.Request(self.endpoint, data=body, headers=headers, method="POST"),
                 timeout=self.timeout,
-            ) as response:
-                raw = response.read(MAX_RESPONSE_BYTES + 1)
+            )
         except urllib.error.HTTPError as exc:
             _LOG.warning("event=provider_http_error provider=openai_compatible status=%d", exc.code)
             raise OpenRouterFallbackUnavailable("OpenAI-compatible fallback request failed") from exc
@@ -291,8 +313,8 @@ def normalize_chat_completions_endpoint(value: str) -> str:
     parsed = urlsplit(endpoint)
     if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
         raise ValueError("fallback endpoint must be an absolute HTTP(S) URL without userinfo")
-    if parsed.fragment:
-        raise ValueError("fallback endpoint must not contain a fragment")
+    if parsed.query or parsed.fragment:
+        raise ValueError("fallback endpoint must not contain query or fragment data")
     path = parsed.path.rstrip("/")
     if not path.endswith("/chat/completions"):
         path = f"{path}/chat/completions" if path else "/chat/completions"

@@ -372,10 +372,11 @@ all user stories are implemented.
 - Ledger state: **148 of 153 tasks checked; 5 remain open**. The checked
   tasks represent implemented source/artifacts with focused evidence; they do
   not imply that the public release gates are complete.
-- Source evidence: the latest `python3 -m pytest -q` passes **411 tests with 4
+- Source evidence: the latest `python3 -m pytest -q` passes **419 tests with 4
   expected skips**. Two skips require the Home Assistant 2026.9
   runtime/config-flow dependency; the other two are opt-in live follow-up and
-  native-miss probes. The focused release/quality/packaging suite passes **37
+  native-miss probes. The focused provider/Web UI hardening suite passes **48
+  tests**; the current release/quality/provider regression subset passes **39
   tests**; the expanded release/provenance suite passes **46 tests**; and the
   focused restart/follow-up/provenance suite passes **54
   tests with 2 opt-in skips**. The opt-in live follow-up probe passes with its
@@ -433,7 +434,8 @@ all user stories are implemented.
   path, credentials, query, or fragment), and its regression test is included
   in the 411-test source result. T059 now also supports explicitly supplied
   second-user and natural-TTL opt-ins without changing the safe default or
-  persisting credentials.
+  persisting credentials. The current source result is 419 tests with 4
+  expected skips.
 - Requirements-quality status is separate from implementation status:
   `checklists/completeness.md` is now **57 of 57 checked**. The final five
   criteria were closed against the current migration behavior, reviewed

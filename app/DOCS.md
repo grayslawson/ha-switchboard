@@ -128,17 +128,17 @@ matching public tag and image before installing it from the App store:
 | --- | --- | --- |
 | `ingress_only` | `true` | Supervisor ingress may use the UI and API without a second token. Direct Core/adapter API calls are also accepted when they present the matching `gateway_token`; the option does not need to be disabled for the normal Core integration. |
 | `gateway_mode` | `adapter_only` | The normal mode. The Core integration or another adapter supplies sanitized profiles and owns Home Assistant execution. `supervisor_read_only` is a legacy persisted value; startup migration normalizes it to `adapter_only` and records an internal compatibility marker. It is not a current schema choice. |
-| `jev_provider` | `disabled` | Select `typesafe` for direct TypeSafe System One, `openrouter` for OpenRouter Decisions, or `compatible` for Switchboard's generic typed Jev contract. An endpoint is required for enabled providers. |
-| `jev_endpoint` | Leave unset when disabled; otherwise use the endpoint for the selected provider | TypeSafe accepts a base URL or `/v1/systemone`; OpenRouter requires `https://openrouter.ai/api/alpha/decisions`; compatible endpoints must implement Switchboard's typed Jev contract. A public image may predate this adapter; verify the target tag. |
-| `jev_model` | `typesafe/jev-1.13` | Model for OpenRouter Decisions or the direct TypeSafe client; compatible typed services may ignore it. |
-| `jev_api_key` | Leave blank when `jev_endpoint` is blank | The API key for the configured Jev service. This is sent as a Bearer credential to that service and is not the gateway token. Do not put it in documentation, YAML committed to Git, logs, or screenshots. |
+| `jev_provider` | `disabled` | Select `typesafe` for direct TypeSafe System One, `openrouter` for OpenRouter Decisions, or `compatible` for Switchboard's generic typed Jev contract. TypeSafe and OpenRouter have documented defaults; `compatible` needs an endpoint. |
+| `jev_endpoint` | Leave unset when disabled, or to use the TypeSafe/OpenRouter default | TypeSafe accepts a base URL or `/v1/systemone`; OpenRouter must use `https://openrouter.ai/api/alpha/decisions`; compatible endpoints must implement Switchboard's typed Jev contract. A public image may predate this adapter; verify the target tag. |
+| `jev_model` | `typesafe/jev-1.13` for OpenRouter | Model for OpenRouter Decisions or the direct TypeSafe client; compatible typed services may ignore it. The TypeSafe client supplies its documented default when blank. |
+| `jev_api_key` | Leave blank unless the Jev service requires one | The API key for the configured Jev service. This is sent as a Bearer credential to that service and is not the gateway token. Do not put it in documentation, YAML committed to Git, logs, or screenshots. |
 | `fallback_provider` | `disabled` until you choose a second model | `openrouter` and `openai_compatible` use the generic OpenAI-compatible chat-completions adapter; `openrouter` defaults to OpenRouter. `typed_http` calls a Switchboard-compatible typed handoff service. No fallback is sent while disabled. |
-| `fallback_endpoint` | Leave unset for OpenRouter; required for typed HTTP | OpenRouter defaults to its chat-completions URL. A typed HTTP service must return bounded prose or a typed proposal, not execute devices itself. Runtime `FALLBACK_BASE_URL` and the legacy persisted `fallback_base_url` name are accepted as compatibility aliases; `fallback_endpoint` is the current App option. |
-| `fallback_model` | An OpenRouter chat-model ID when using OpenRouter fallback | The exact model to receive eligible fallback requests. This is separate from the Jev model. |
-| `fallback_api_key` | The chosen fallback service key | Kept separate from `jev_api_key`; it may have the same value if both routes use your OpenRouter account. |
+| `fallback_endpoint` | Leave unset for OpenRouter; required for `openai_compatible` and `typed_http` | OpenRouter defaults to its chat-completions URL. `openai_compatible` accepts a provider base URL or full `/chat/completions` URL and normalizes the path. A typed HTTP service needs its compatible handoff URL and must return bounded prose or a typed proposal, not execute devices itself. Runtime `FALLBACK_BASE_URL` and the legacy persisted `fallback_base_url` name are accepted as compatibility aliases; `fallback_endpoint` is the current App option. |
+| `fallback_model` | A chat-model ID for `openrouter` or `openai_compatible` | Required by both generic OpenAI-compatible fallback providers. This is separate from the Jev model. |
+| `fallback_api_key` | Leave blank unless the fallback service requires one | Optional Bearer key for the fallback service. Keep it separate from `jev_api_key`; it may have the same value if both routes use your OpenRouter account. |
 | `gateway_token` | A long random value | Bearer credential used by the Core integration to call the protected gateway endpoints. Use the exact same value in the HA Switchboard Integration configuration. |
 | `profile_refresh_minutes` | `15` | The Core integration reads this App setting and schedules complete-profile reconciliation. For first use, request an explicit scan from the Web UI and wait for `active`. |
-| `privacy_mode` | `local_only` | Blocks calls to hosted Jev endpoints. Set `jev_hosted_allowed` to use OpenRouter's hosted Jev. `hosted_allowed` also permits hosted downstream routes when configured. |
+| `privacy_mode` | `local_only` | Blocks hosted Jev and hosted fallback routes. Set `jev_hosted_allowed` to use OpenRouter's hosted Jev without hosted fallback. `hosted_allowed` also permits an explicitly configured hosted fallback. |
 
 Privacy and fallback behavior at a glance:
 
@@ -148,12 +148,14 @@ Privacy and fallback behavior at a glance:
 | `jev_hosted_allowed` | Hosted Jev is allowed | Blocked |
 | `hosted_allowed` | Hosted Jev is allowed | Allowed only for an explicitly configured eligible fallback |
 
-Fallback is opt-in. `disabled` sends no fallback request. The `openrouter`
-route is a generic OpenAI-compatible Chat Completions adapter; its default
-endpoint is `https://openrouter.ai/api/v1/chat/completions`, and its
-`fallback_model` and `fallback_api_key` are separate from Jev. `typed_http`
-must return a bounded response or typed proposal and must not execute Home
-Assistant actions itself.
+Fallback is opt-in. `disabled` sends no fallback request. The `openrouter` and
+`openai_compatible` routes use the generic OpenAI-compatible Chat Completions
+adapter. OpenRouter supplies the default endpoint; a compatible provider needs
+its own base URL or full `/chat/completions` URL. Both require
+`fallback_model`; `fallback_api_key` is only needed when the service requires
+authentication. `typed_http` uses a separate Switchboard handoff contract and
+must return a bounded response or typed proposal, never execute Home Assistant
+actions itself.
 
 The Configuration page now supplies plain-language labels and inline field
 descriptions. If you still see raw option names, refresh the App repository
@@ -174,9 +176,11 @@ profile_refresh_minutes: 15
 privacy_mode: local_only
 ```
 
-With no `jev_endpoint`, the App makes no Jev request. Decision-dependent
-conversation requests fail closed; do not describe an empty endpoint as a
-working provider.
+With `jev_provider: disabled` and no runtime override, the App makes no Jev
+request. Decision-dependent conversation requests fail closed; do not describe
+an empty endpoint as a working provider. If `typesafe` or `openrouter` is
+selected, their documented default endpoint is used when `jev_endpoint` is
+blank.
 
 Keep `ingress_only: true` for the normal Home Assistant OS arrangement. The
 name means that the browser UI is ingress-only; the Core integration uses the
@@ -248,7 +252,9 @@ through the supported runtime boundary.
 ### Direct TypeSafe System One
 
 The direct TypeSafe client uses `POST /v1/systemone` and the TypeSafe `answers`
-contract. The App selects it with `jev_provider: typesafe`, `jev_endpoint`,
+contract. With no custom endpoint, it defaults to
+`https://api.typesafe.ai/v1/systemone`. The App selects it with
+`jev_provider: typesafe`, `jev_endpoint`,
 `jev_api_key`, and `jev_model`; an explicitly managed runtime can use
 `JEV_PROVIDER=typesafe`, `JEV_BASE_URL` (or `JEV_ENDPOINT`), `JEV_API_KEY`, and
 `JEV_MODEL` instead. The client defaults to the documented TypeSafe endpoint
@@ -259,7 +265,9 @@ choice parameters when the capability schema supports them.
 The current Supervisor App manifest exposes `jev_provider` and uses
 `jev_endpoint` for the selected provider. It does not expose the environment
 variable name `JEV_BASE_URL`; use the App option for the TypeSafe base URL or
-the runtime variable in a separately managed client.
+the runtime variable in a separately managed client. The App can select
+TypeSafe directly; runtime variables are only an alternative for separately
+managed clients.
 
 ### OpenRouter Decisions
 
@@ -385,8 +393,11 @@ POST /v1/assist/process
 ```
 
 `/readyz` being degraded immediately after installation is expected until the
-Core-side adapter has reconciled a profile. A blank Jev endpoint also leaves
-the gateway fail-closed for conversation requests.
+Core-side adapter has reconciled a profile and the provider status is ready.
+In the current gateway, that requires a configured Jev provider; a fallback
+alone does not make `/readyz` ready. Provider status is not an automatic
+reachability probe. Health is liveness only; it does not prove profile or
+provider compatibility.
 
 ## Web UI and logs
 
@@ -394,15 +405,19 @@ Open the App through Supervisor's **Open Web UI** action. The dashboard is an
 operator console, not a device-control UI. It shows liveness/readiness, profile
 freshness and capability count, Core connection state, privacy and fallback
 configuration state, bounded provider status, scan state, and redacted
-diagnostic events. It does not show endpoint URLs, API keys, gateway tokens,
-raw entity IDs, raw utterances, or provider response bodies.
+diagnostic events. Provider status is configuration/circuit state only:
+reachability is deliberately shown as unverified unless a separate bounded
+compatibility probe is run. It does not show endpoint URLs, API keys, gateway
+tokens, raw entity IDs, raw utterances, or provider response bodies.
 
 Use **Refresh status** for current state and **Scan Home Assistant now** to
 request one Core reconciliation. The scan button returns an acknowledgement;
 wait for the scan state and profile status to settle to `active`. Use the
 diagnostic severity/event filters and pagination to investigate bounded events.
 The UI polls for a finite period and preserves the last known profile if the
-scan does not finish within that window.
+scan does not finish within that window. Provider status is configuration and
+circuit state; reachability remains unverified unless a separate bounded
+compatibility probe is run.
 
 For App process logs, use Home Assistant's App log view or the local harness's
 `tools/local-dev.sh logs`. Logs contain bounded event codes, route class,
@@ -426,7 +441,9 @@ The expected first-use sequence is: App `startup` → Core
 `profile_scan_requested` → `profile_reconciled` → `decision` → Core
 `execution`/`verification`. A missing `profile_reconciled` means the Core
 integration is not connected or the scan failed; a healthy App endpoint alone
-does not prove that Assist is ready.
+does not prove that Assist is ready. A completed scan still does not prove
+that the selected Jev/fallback endpoint is compatible or that an Assist
+pipeline selected HA Switchboard.
 
 For a visual UI walkthrough, use the **Info**, **Configuration**, **Log**, and
 **Open Web UI** tabs in the Supervisor App page. The dashboard is intentionally

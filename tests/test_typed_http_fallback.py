@@ -83,3 +83,51 @@ def test_transport_and_response_bounds_fail_closed(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr("urllib.request.urlopen", lambda *_args, **_kwargs: _Response({"handoff_id": "wrong", "kind": "prose_response", "text": "x"}))
     with pytest.raises(TypedHttpFallbackInvalidResponse):
         TypedHttpFallbackAdapter("http://local-reasoner:8090/decide").invoke(_route(), _request(handoff_id="other"))
+
+
+def test_typed_response_contract_rejects_unknown_fields_and_raw_references(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        lambda *_args, **_kwargs: _Response({
+            "handoff_id": "handoff-fixture",
+            "kind": "prose_response",
+            "text": "ok",
+            "entity_id": "light.secret",
+        }),
+    )
+    with pytest.raises(TypedHttpFallbackInvalidResponse, match="sensitive"):
+        TypedHttpFallbackAdapter("http://local-reasoner:8090/decide").invoke(_route(), _request())
+
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        lambda *_args, **_kwargs: _Response({
+            "handoff_id": "handoff-fixture",
+            "kind": "prose_response",
+            "text": "ok",
+            "provider": "other",
+        }),
+    )
+    with pytest.raises(TypedHttpFallbackInvalidResponse, match="unsupported"):
+        TypedHttpFallbackAdapter("http://local-reasoner:8090/decide").invoke(_route(), _request())
+
+
+def test_typed_transport_retries_only_bounded_provider_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = 0
+
+    def urlopen(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        if calls < 3:
+            raise TimeoutError()
+        return _Response({
+            "handoff_id": "handoff-fixture",
+            "route_id": "typed-local",
+            "kind": "prose_response",
+            "text": "ok",
+        })
+
+    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    monkeypatch.setattr("ha_switchboard.typed_http_fallback.time.sleep", lambda _delay: None)
+    result = TypedHttpFallbackAdapter("http://local-reasoner:8090/decide").invoke(_route(), _request())
+    assert result["text"] == "ok"
+    assert calls == 3

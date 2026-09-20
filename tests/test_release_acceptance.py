@@ -37,6 +37,7 @@ def test_tag_publication_runs_the_bounded_app_e2e_gate_before_publication() -> N
     mirror = _workflow("mirror-public.yml")
 
     assert "tools/app-image-e2e.sh" in mirror
+    assert "timeout --kill-after=10s 300s bash tools/app-image-e2e.sh" in mirror
     assert mirror.index("tools/app-image-e2e.sh") < mirror.index("Push public master")
 
 

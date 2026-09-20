@@ -50,10 +50,17 @@ jobs:
           test "$ref_name" = "v${ref_name#v}"
           git fetch --no-tags origin +refs/heads/master:refs/remotes/origin/master
           tag_commit="$(git rev-parse "refs/tags/$ref_name^{commit}")"
+          source_revision="${GITHUB_SHA:-}"
+          if [ -z "$source_revision" ]; then
+            source_revision="${FORGEJO_SHA:-}"
+          fi
+          test -n "$source_revision"
+          test "$source_revision" = "$(git rev-parse 'HEAD^{commit}')"
+          test "$tag_commit" = "$source_revision"
           master_ref=refs/remotes/origin/master
           master_commit="$(git rev-parse "$master_ref^{commit}")"
           git merge-base --is-ancestor "$tag_commit" "$master_ref"
-          echo "release tag $ref_name ($tag_commit) is on protected master ($master_commit)"
+          echo "release tag $ref_name ($source_revision) is on protected master ($master_commit)"
 
       - name: Verify release source versions are consistent
         shell: bash
@@ -146,6 +153,14 @@ jobs:
               --build-arg "BUILD_REVISION=${GITHUB_SHA}" \
               app
           done
+
+      - name: Run bounded App image E2E before versioned image publication
+        if: ${{ forgejo.ref_type == 'tag' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v timeout
+          timeout --kill-after=10s 300s bash tools/app-image-e2e.sh
 
       - name: Push versioned multi-architecture image
         if: ${{ forgejo.ref_type == 'tag' }}

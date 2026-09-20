@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 import os
 import socket
 import urllib.error
@@ -22,6 +23,7 @@ from .protocol import (
     normalize_typed_parameters,
     parameter_questions,
 )
+from .http_security import RetryPolicy
 from .redaction import (
     endpoint_is_hosted,
     open_provider_url,
@@ -36,6 +38,9 @@ DEFAULT_TYPESAFE_MODEL = "jev-1.13.0"
 MAX_JEV_REQUEST_BYTES = 64_000
 MAX_JEV_RESPONSE_BYTES = 32_000
 MAX_PROVIDER_API_KEY = 512
+MAX_PROVIDER_ENDPOINT = 2_048
+_RETRY_POLICY = RetryPolicy(attempts=2, base_delay=0.25, max_delay=2.0)
+_RETRYABLE_HTTP_STATUS = frozenset({408, 429, 500, 502, 503, 504})
 DEFAULT_OPENROUTER_DECISIONS_ENDPOINT = "https://openrouter.ai/api/alpha/decisions"
 DEFAULT_OPENROUTER_DECISIONS_MODEL = "typesafe/jev-1.13"
 
@@ -54,6 +59,25 @@ class JevInvalidResponse(JevError):
 
 class JevClient(Protocol):
     def decide(self, request: DecisionRequest) -> JevDecision: ...
+
+
+def _read_provider_response(request_obj: urllib.request.Request, *, timeout: float) -> bytes:
+    last_error: Exception | None = None
+    for attempt in range(_RETRY_POLICY.attempts + 1):
+        try:
+            with open_provider_url(request_obj, timeout=timeout) as response:
+                return response.read(MAX_JEV_RESPONSE_BYTES + 1)
+        except urllib.error.HTTPError as exc:
+            if exc.code not in _RETRYABLE_HTTP_STATUS or not _RETRY_POLICY.can_retry(attempt):
+                raise
+            last_error = exc
+        except (urllib.error.URLError, TimeoutError, socket.timeout, OSError) as exc:
+            if not _RETRY_POLICY.can_retry(attempt):
+                raise
+            last_error = exc
+        time.sleep(_RETRY_POLICY.delay(attempt))
+    assert last_error is not None
+    raise last_error
 
 
 def build_questions(request: DecisionRequest) -> list[dict[str, Any]]:
@@ -101,18 +125,22 @@ class HttpJevClient:
         if not isinstance(endpoint, str):
             raise ValueError("Jev endpoint must be text")
         self.endpoint = endpoint.rstrip("/")
-        if len(self.endpoint) > 2_048:
+        if len(self.endpoint) > MAX_PROVIDER_ENDPOINT:
             raise ValueError("Jev endpoint is too long")
         if api_key is not None and len(api_key) > MAX_PROVIDER_API_KEY:
             raise ValueError("Jev API key is too long")
         if self.endpoint:
             parsed = urlsplit(self.endpoint)
-            if parsed.username or parsed.password or parsed.fragment:
-                raise ValueError("Jev endpoint must not contain userinfo or fragments")
+            if parsed.username or parsed.password or parsed.query or parsed.fragment:
+                raise ValueError("Jev endpoint must not contain credentials or query data")
             require_secure_provider_endpoint(self.endpoint, has_credentials=bool(api_key), has_context=True)
         self.api_key = api_key
         self.api_key_env = api_key_env
-        self.timeout = max(0.1, min(timeout, 10.0))
+        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not math.isfinite(timeout):
+            raise ValueError("Jev timeout is invalid")
+        if not 0.2 <= timeout <= 15.0:
+            raise ValueError("Jev timeout is outside its bound")
+        self.timeout = float(timeout)
 
     @property
     def hosted(self) -> bool:
@@ -146,8 +174,7 @@ class HttpJevClient:
             headers["Authorization"] = f"Bearer {api_key}"
         request_obj = urllib.request.Request(self.endpoint, data=body, headers=headers, method="POST")
         try:
-            with open_provider_url(request_obj, timeout=self.timeout) as response:
-                raw = response.read(MAX_JEV_RESPONSE_BYTES + 1)
+            raw = _read_provider_response(request_obj, timeout=self.timeout)
         except urllib.error.HTTPError as exc:
             _LOG.warning("event=jev_http_error provider=generic status=%d", exc.code)
             raise JevUnavailable("Jev request failed") from exc
@@ -245,11 +272,10 @@ class TypeSafeJevClient(HttpJevClient):
         if key:
             headers["Authorization"] = f"Bearer {key}"
         try:
-            with open_provider_url(
+            raw = _read_provider_response(
                 urllib.request.Request(self.endpoint, data=body, headers=headers, method="POST"),
                 timeout=self.timeout,
-            ) as response:
-                raw = response.read(MAX_JEV_RESPONSE_BYTES + 1)
+            )
         except urllib.error.HTTPError as exc:
             _LOG.warning("event=jev_http_error provider=typesafe status=%d", exc.code)
             raise JevUnavailable("TypeSafe request failed") from exc
@@ -601,11 +627,10 @@ class OpenRouterDecisionsClient(HttpJevClient):
         if key:
             headers["Authorization"] = f"Bearer {key}"
         try:
-            with open_provider_url(
+            raw = _read_provider_response(
                 urllib.request.Request(self.endpoint, data=body, headers=headers, method="POST"),
                 timeout=self.timeout,
-            ) as response:
-                raw = response.read(MAX_JEV_RESPONSE_BYTES + 1)
+            )
         except urllib.error.HTTPError as exc:
             _LOG.warning("event=jev_http_error provider=openrouter status=%d", exc.code)
             raise JevUnavailable("OpenRouter Decisions request failed") from exc
@@ -647,14 +672,18 @@ class OpenRouterDecisionsClient(HttpJevClient):
             _highest_competing_probability(route_answer),
             _highest_competing_probability(capability_answer),
         )
+        try:
+            risk = RiskClass(str(chosen.get("risk_class", "routine")))
+        except ValueError as exc:
+            raise JevInvalidResponse("OpenRouter capability risk is invalid") from exc
         return JevDecision(
             route=RouteKind.ROUTINE_CONTROL,
             complexity=Complexity.SIMPLE,
             capability_id=capability_id,
             confidence=confidence,
             ambiguity=ambiguity,
-            risk=RiskClass(str(chosen.get("risk_class", "routine"))),
-            requires_confirmation=chosen.get("risk_class") in {"confirm", "blocked"},
+            risk=risk,
+            requires_confirmation=risk in {RiskClass.CONFIRM, RiskClass.BLOCKED},
             reason="openrouter_decisions",
         )
 

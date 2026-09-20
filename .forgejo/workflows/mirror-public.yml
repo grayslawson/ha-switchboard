@@ -155,7 +155,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bash tools/app-image-e2e.sh
+          command -v timeout
+          timeout --kill-after=10s 300s bash tools/app-image-e2e.sh
       - name: Push public master
         env:
           GH_MIRROR_TOKEN: ${{ secrets.GH_MIRROR_TOKEN }}

@@ -66,3 +66,26 @@ agreement before publication can proceed.
 Changed files owned by this worker are the verifier, its focused test, and
 this evidence record. Existing changes in all other worktree paths were left
 untouched.
+
+## Follow-up acceptance audit — current worktree
+
+The release-only follow-up found and corrected two workflow gaps without
+touching App/Core source or the Home Assistant runtime:
+
+- `build-app.yml` now requires the tag commit to equal the event/checkout
+  revision before GHCR publication, in addition to protected-master ancestry.
+- `build-app.yml` runs the bounded source-image E2E after the multi-architecture
+  build and before pushing the versioned GHCR image.
+- `mirror-public.yml` now runs the tag-gate E2E with
+  `timeout --kill-after=10s 300s` and fails if the timeout utility is absent.
+
+Focused local results after those changes: `19 passed` for
+`tests/test_release_acceptance.py tests/test_release_workflows.py`, workflow
+lint passed with `actionlint -config-file .github/actionlint.yaml
+.forgejo/workflows/*.yml`, `bash -n tools/app-image-e2e.sh` passed, and the two
+release tools compiled with `python3 -m py_compile`. No external publication,
+HACS login, registry login, or Home Assistant restart was attempted.
+
+T149 remains pending and T151 remains blocked: public mirror/tag/image
+agreement, HACS, and installed App/Core canary evidence are still absent. The
+existing unrelated dirty App/Core/test edits were preserved.

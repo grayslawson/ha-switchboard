@@ -18,6 +18,9 @@ def test_dashboard_covers_status_scan_provider_and_recovery_surfaces() -> None:
         "Provider state",
         "Configure Assist",
         "Configuration and recovery",
+        "Profile revision",
+        "Pending reason",
+        "Configuration status",
     ):
         assert phrase in page
     for endpoint in (
@@ -60,5 +63,36 @@ def test_status_rendering_tolerates_missing_new_optional_endpoints() -> None:
     # Provider and diagnostics routes are optional during rollout. The page
     # must show a bounded unavailable message rather than throw raw JSON.
     assert "compatibility unverified" in page
-    assert "Diagnostics are not available from this App version" in page
-    assert "Some status endpoints are unavailable" in page
+    assert "failureMessage(error,'Diagnostics')" in page
+    assert "Dashboard updated; provider status is unavailable." in page
+
+
+def test_dashboard_keeps_optional_provider_failure_independent_and_classifies_failures() -> None:
+    page = html()
+
+    assert "optionalJson('v1/provider/status')" in page
+    assert "Promise.all" in page
+    assert "Provider status" in page
+    for kind in ("unauthorized", "unavailable", "server-error", "network"):
+        assert f"'{kind}'" in page
+    assert "Gateway status" in page
+
+
+def test_scan_requires_active_profile_with_no_pending_work() -> None:
+    page = html()
+
+    assert "profileComplete" in page
+    assert "state==='active'" in page
+    assert "!waits.sections.length&&!waits.invalidations.length" in page
+    assert "active profile with no pending sections or invalidations" in page
+
+
+def test_dashboard_humanizes_and_bounds_api_text() -> None:
+    page = html()
+
+    assert "const safeText=" in page
+    assert "const humanize=" in page
+    assert "textContent=format(value)" in page
+    assert "humanize(item.status" in page
+    assert "profile_revision" in page
+    assert "configuration_warnings" in page
