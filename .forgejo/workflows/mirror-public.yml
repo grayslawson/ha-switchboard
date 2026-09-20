@@ -22,6 +22,8 @@ on:
       - "pyproject.toml"
       - "repository.yaml"
       - ".forgejo/workflows/mirror-public.yml"
+      - "tools/ha-switchboard-export-public.py"
+      - "tools/app-image-smoke.sh"
       - "tools/app-image-e2e.sh"
   workflow_dispatch:
 

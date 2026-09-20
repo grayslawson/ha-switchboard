@@ -15,6 +15,15 @@ on:
       - "repository.yaml"
       - "docs/RELEASE.md"
       - ".forgejo/workflows/build-app.yml"
+      - ".forgejo/workflows/mirror-public.yml"
+      - "tests/test_release_boundary.py"
+      - "tests/test_ghcr_revision_gate.py"
+      - "tools/check_release_boundary.py"
+      - "tools/ha-switchboard-scan.py"
+      - "tools/ha-switchboard-export-public.py"
+      - "tools/app-image-smoke.sh"
+      - "tools/app-image-e2e.sh"
+      - "tools/verify-ghcr-image.py"
   workflow_dispatch:
 
 env:
@@ -120,7 +129,13 @@ jobs:
           if [[ "$ref_type" == "tag" ]]; then
             test "${ref_name#v}" = "$version"
           fi
+          source_revision="${GITHUB_SHA:-}"
+          if [ -z "$source_revision" ]; then
+            source_revision="${FORGEJO_SHA:-}"
+          fi
+          test -n "$source_revision"
           printf 'value=%s\n' "$version" >> "$FORGEJO_OUTPUT"
+          printf 'revision=%s\n' "$source_revision" >> "$FORGEJO_OUTPUT"
 
       - name: Log in to GitHub Container Registry
         env:
@@ -135,6 +150,7 @@ jobs:
       - name: Build amd64 and arm64 images
         env:
           VERSION: ${{ steps.version.outputs.value }}
+          REVISION: ${{ steps.version.outputs.revision }}
         run: |
           set -eu
           manifest="localhost/ha-switchboard:${VERSION}"
@@ -150,7 +166,7 @@ jobs:
               --manifest "$manifest" \
               --build-arg "BUILD_VERSION=${VERSION}" \
               --build-arg "BUILD_ARCH=${hass_arch}" \
-              --build-arg "BUILD_REVISION=${GITHUB_SHA}" \
+              --build-arg "BUILD_REVISION=${REVISION}" \
               app
           done
 
@@ -187,6 +203,7 @@ jobs:
           GHCR_USERNAME: grayslawson
           GHCR_TOKEN: ${{ secrets.GH_PACKAGE_TOKEN }}
           VERSION: ${{ steps.version.outputs.value }}
+          REVISION: ${{ steps.version.outputs.revision }}
         run: |
           set -euo pipefail
           ref_type="${FORGEJO_REF_TYPE:-${GITHUB_REF_TYPE:-branch}}"
@@ -195,8 +212,19 @@ jobs:
           else
             published_tag=latest
           fi
-          python3 tools/verify-ghcr-image.py \
-            --image "${IMAGE}" \
-            --tag "$published_tag" \
-            --source-url "https://github.com/grayslawson/ha-switchboard" \
-            --revision "${GITHUB_SHA}"
+          for attempt in {1..3}; do
+            if python3 tools/verify-ghcr-image.py \
+              --image "${IMAGE}" \
+              --tag "$published_tag" \
+              --source-url "https://github.com/grayslawson/ha-switchboard" \
+              --revision "$REVISION" \
+              2>"$RUNNER_TEMP/ghcr-publish-verify-error.log"; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "published multi-architecture image did not become readable within 30 seconds" >&2
+              tail -n 4 "$RUNNER_TEMP/ghcr-publish-verify-error.log" >&2
+              exit 1
+            fi
+            sleep 10
+          done

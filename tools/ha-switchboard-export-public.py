@@ -46,6 +46,19 @@ EXCLUDED_DIRECTORIES = frozenset(
 EXCLUDED_FILES = frozenset(
     {
         "AGENTS.md",
+        # These tests exercise private Forgejo workflows or the preserved
+        # local Supervisor harness.  Their dependencies are intentionally
+        # omitted from the public export, so exporting the tests would leave
+        # a public checkout that fails before it can validate the product.
+        "tests/test_app_image_e2e.py",
+        "tests/test_app_security.py",
+        "tests/test_local_dev.py",
+        "tests/test_local_fixtures.py",
+        "tests/test_manual_scan_acceptance.py",
+        "tests/test_native_miss_runtime.py",
+        "tests/test_preserve_first_runtime.py",
+        "tests/test_release_acceptance.py",
+        "tests/test_restart_acceptance.py",
         "docs/PUBLIC_REPOSITORY.md",
         "tools/ha-switchboard-export-public.py",
         "tools/app-image-e2e.sh",

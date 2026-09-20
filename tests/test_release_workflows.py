@@ -96,7 +96,7 @@ def test_release_publication_requires_static_and_external_metadata_evidence() ->
 def test_release_workflows_use_exact_source_revision_and_release_paths() -> None:
     build = _workflow("build-app.yml")
     mirror = _workflow("mirror-public.yml")
-    assert '--revision "${GITHUB_SHA}"' in build
+    assert '--revision "$REVISION"' in build
     assert '--revision "$source_revision"' in mirror
     assert 'test "${ref_name#v}" = "$version"' in build
     assert 'test "${ref_name#v}" = "$version"' in mirror
@@ -107,12 +107,45 @@ def test_release_workflows_use_exact_source_revision_and_release_paths() -> None
     assert "push --force github HEAD:master" in mirror
 
 
+def test_release_gate_dependencies_trigger_the_workflows_that_consume_them() -> None:
+    build = _workflow("build-app.yml")
+    mirror = _workflow("mirror-public.yml")
+
+    # Every mirror input must also build an image for a tag at that revision;
+    # otherwise the mirror can wait for provenance that no build produced.
+    for path in (
+        ".forgejo/workflows/mirror-public.yml",
+        "tests/test_release_boundary.py",
+        "tests/test_ghcr_revision_gate.py",
+        "tools/check_release_boundary.py",
+        "tools/ha-switchboard-scan.py",
+        "tools/ha-switchboard-export-public.py",
+        "tools/app-image-smoke.sh",
+        "tools/app-image-e2e.sh",
+        "tools/verify-ghcr-image.py",
+    ):
+        entry = f'      - "{path}"'
+        assert entry in build, path
+        assert entry in mirror, path
+
+
 def test_release_tag_runtime_gate_is_anchored_before_public_tag_push() -> None:
     mirror = _workflow("mirror-public.yml")
     e2e_step = mirror.index("- name: Run bounded App image E2E gate before tag publication")
     public_push = mirror.index("- name: Push public master")
     assert e2e_step < public_push
     assert mirror.index("timeout --kill-after=10s 300s bash tools/app-image-e2e.sh", e2e_step) < public_push
+
+
+def test_build_revision_provenance_uses_one_checked_revision_and_bounded_readback() -> None:
+    build = _workflow("build-app.yml")
+    assert 'source_revision="${GITHUB_SHA:-}"' in build
+    assert 'source_revision="${FORGEJO_SHA:-}"' in build
+    assert "printf 'revision=%s\\n' \"$source_revision\" >> \"$FORGEJO_OUTPUT\"" in build
+    assert '--build-arg "BUILD_REVISION=${REVISION}"' in build
+    assert '--revision "$REVISION"' in build
+    assert "for attempt in {1..3}; do" in build
+    assert "sleep 10" in build
 
 
 def test_release_source_versions_are_consistent() -> None:

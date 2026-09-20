@@ -90,3 +90,26 @@ def test_public_export_omits_private_forgejo_workflows(tmp_path: Path) -> None:
     assert not (destination / "tools" / "local-dev.sh").exists()
     assert not (destination / "tools" / "app-image-e2e.sh").exists()
     assert not (destination / "tools" / "local-fixtures").exists()
+
+
+def test_public_export_omits_tests_for_private_release_and_runtime_harnesses(
+    tmp_path: Path,
+) -> None:
+    if ha_switchboard_export_public is None:
+        pytest.skip("the exporter is private mirror infrastructure")
+
+    destination = tmp_path / "public"
+    assert ha_switchboard_export_public.export(Path(__file__).parents[1], destination) == []
+    for relative in (
+        "tests/test_app_image_e2e.py",
+        "tests/test_app_security.py",
+        "tests/test_local_dev.py",
+        "tests/test_local_fixtures.py",
+        "tests/test_manual_scan_acceptance.py",
+        "tests/test_native_miss_runtime.py",
+        "tests/test_preserve_first_runtime.py",
+        "tests/test_release_acceptance.py",
+        "tests/test_restart_acceptance.py",
+        "tests/test_release_workflows.py",
+    ):
+        assert not (destination / relative).exists(), relative

@@ -48,8 +48,11 @@ def test_local_option_loader_accepts_jev_and_every_fallback_option_without_eval(
         "export HA_SWITCHBOARD_FALLBACK_MODEL=exported-model; "
         "load_local_test_options; "
         "[[ $HA_SWITCHBOARD_JEV_ENDPOINT == https://jev.example/decide ]] && "
+        "[[ $HA_SWITCHBOARD_JEV_API_KEY == jev-key ]] && "
         "[[ $HA_SWITCHBOARD_FALLBACK_PROVIDER == typed_http ]] && "
         "[[ $HA_SWITCHBOARD_FALLBACK_MODEL == exported-model ]] && "
+        "[[ $HA_SWITCHBOARD_GATEWAY_TOKEN == gateway-token ]] && "
+        "[[ $HA_SWITCHBOARD_PROFILE_REFRESH_MINUTES == 30 ]] && "
         "[[ $HA_SWITCHBOARD_PRIVACY_MODE == hosted_allowed ]]",
     )
     assert result.returncode == 0, result.stderr
@@ -68,6 +71,17 @@ def test_local_option_loader_rejects_unknown_and_unbalanced_values(tmp_path: Pat
     options.write_text("HA_SWITCHBOARD_JEV_ENDPOINT=\"unclosed\n", encoding="utf-8")
     unbalanced = run_bash("-c", f"source {SCRIPT!s}; LOCAL_OPTIONS_FILE={options!s}; load_local_test_options")
     assert unbalanced.returncode == 2
+
+    options.write_text(
+        "HA_SWITCHBOARD_JEV_API_KEY=\"secret-value\n",
+        encoding="utf-8",
+    )
+    malformed_secret = run_bash(
+        "-c",
+        f"source {SCRIPT!s}; LOCAL_OPTIONS_FILE={options!s}; load_local_test_options",
+    )
+    assert malformed_secret.returncode == 2
+    assert "secret-value" not in malformed_secret.stdout + malformed_secret.stderr
 
 
 def test_wait_budget_is_positive_and_failure_loops_are_bounded() -> None:
