@@ -27,6 +27,18 @@ def test_image_entrypoint_is_explicitly_readable_and_executable() -> None:
     assert "/usr/local/bin/python3 rix," in profile
 
 
+def test_entrypoint_rejects_invalid_listener_ports_before_startup() -> None:
+    entrypoint = (ROOT / "app" / "run.sh").read_text(encoding="utf-8")
+
+    assert 'PORT="${JEV_PORT:-8099}"' in entrypoint
+    assert "port must be a decimal value from 1 to 65535" in entrypoint
+    assert '"$PORT" -lt 1' not in entrypoint
+    assert "6553[0-5]" in entrypoint
+    assert "[1-5][0-9][0-9][0-9][0-9]" in entrypoint
+    assert '--port "$PORT"' in entrypoint
+    assert '--port "${JEV_PORT:-8099}"' not in entrypoint
+
+
 def test_e2e_token_is_only_used_for_local_contract_checks() -> None:
     harness = (ROOT / "tools" / "app-image-e2e.sh").read_text(encoding="utf-8")
 

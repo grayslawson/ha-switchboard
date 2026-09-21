@@ -112,6 +112,8 @@ def test_dashboard_exposes_keyboard_landmarks_and_dynamic_announcements() -> Non
         "setAttribute('aria-label','Diagnostic events')",
         "Refreshing dashboard…",
         "Loading next diagnostics page…",
+        "Clear filters",
+        "Recent, redacted gateway events",
     ):
         assert phrase in page
 
