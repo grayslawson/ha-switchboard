@@ -233,7 +233,7 @@ class Registry:
             child, child_digest = self.json(
                 f"{prefix}/manifests/{manifest_digest}", MANIFEST_ACCEPT
             )
-            if child_digest is not None and child_digest != manifest_digest:
+            if child_digest != manifest_digest:
                 raise ValueError(f"linux/{architecture} manifest digest does not match descriptor")
             config_descriptor = child.get("config")
             if not isinstance(config_descriptor, dict) or not isinstance(
@@ -243,9 +243,11 @@ class Registry:
             config_digest = _required_digest(
                 config_descriptor["digest"], f"linux/{architecture} config digest"
             )
-            config, _ = self.json(
+            config, config_response_digest = self.json(
                 f"{prefix}/blobs/{config_digest}", "application/json"
             )
+            if config_response_digest != config_digest:
+                raise ValueError(f"linux/{architecture} config digest does not match descriptor")
             config_metadata = config.get("config")
             if not isinstance(config_metadata, dict):
                 raise ValueError(f"linux/{architecture} image has no OCI config metadata")

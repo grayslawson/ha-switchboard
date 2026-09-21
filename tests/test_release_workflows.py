@@ -131,8 +131,10 @@ def test_release_gate_dependencies_trigger_the_workflows_that_consume_them() -> 
 
 def test_release_tag_runtime_gate_is_anchored_before_public_tag_push() -> None:
     mirror = _workflow("mirror-public.yml")
+    image_gate = mirror.index("Gate release on matching multi-architecture App image")
     e2e_step = mirror.index("- name: Run bounded App image E2E gate before tag publication")
     public_push = mirror.index("- name: Push public master")
+    assert image_gate < e2e_step
     assert e2e_step < public_push
     assert mirror.index("timeout --kill-after=10s 300s bash tools/app-image-e2e.sh", e2e_step) < public_push
 

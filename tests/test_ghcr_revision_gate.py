@@ -27,7 +27,14 @@ CONFIG_DIGESTS = {
 }
 
 
-def _registry_with_labels(revision: str, *, config_metadata=None, index_digest=IMAGE_DIGEST):
+def _registry_with_labels(
+    revision: str,
+    *,
+    config_metadata=None,
+    index_digest=IMAGE_DIGEST,
+    child_digest=...,
+    config_response_digest=...,
+):
     registry = object.__new__(MODULE.Registry)
     registry.repository = "grayslawson/ha-switchboard"
 
@@ -45,10 +52,13 @@ def _registry_with_labels(revision: str, *, config_metadata=None, index_digest=I
             )
         for arch in ("amd64", "arm64"):
             if path.endswith(f"/manifests/{PLATFORM_DIGESTS[arch]}"):
-                return {"config": {"digest": CONFIG_DIGESTS[arch]}}, None
+                response_digest = PLATFORM_DIGESTS[arch] if child_digest is ... else child_digest
+                return {"config": {"digest": CONFIG_DIGESTS[arch]}}, response_digest
             if path.endswith(f"/blobs/{CONFIG_DIGESTS[arch]}"):
                 if config_metadata is not None:
-                    return config_metadata, None
+                    response_digest = CONFIG_DIGESTS[arch] if config_response_digest is ... else config_response_digest
+                    return config_metadata, response_digest
+                response_digest = CONFIG_DIGESTS[arch] if config_response_digest is ... else config_response_digest
                 return {
                     "config": {
                         "Labels": {
@@ -56,7 +66,7 @@ def _registry_with_labels(revision: str, *, config_metadata=None, index_digest=I
                             "org.opencontainers.image.revision": revision,
                         }
                     }
-                }, None
+                }, response_digest
         raise AssertionError(f"unexpected registry path: {path}")
 
     registry.json = fake_json
@@ -106,6 +116,26 @@ def test_release_image_gate_rejects_malformed_oci_config_metadata() -> None:
 def test_release_image_gate_rejects_missing_immutable_index_digest() -> None:
     registry = _registry_with_labels("forgejo-commit-1", index_digest=None)
     with pytest.raises(ValueError, match="published image digest"):
+        registry.verify(
+            "0.1.3",
+            {"amd64", "arm64"},
+            SOURCE_URL,
+            "forgejo-commit-1",
+        )
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"child_digest": None}, "manifest digest does not match descriptor"),
+        ({"child_digest": IMAGE_DIGEST}, "manifest digest does not match descriptor"),
+        ({"config_response_digest": None}, "config digest does not match descriptor"),
+        ({"config_response_digest": IMAGE_DIGEST}, "config digest does not match descriptor"),
+    ],
+)
+def test_release_image_gate_rejects_missing_or_mismatched_child_digests(kwargs, message) -> None:
+    registry = _registry_with_labels("forgejo-commit-1", **kwargs)
+    with pytest.raises(ValueError, match=message):
         registry.verify(
             "0.1.3",
             {"amd64", "arm64"},

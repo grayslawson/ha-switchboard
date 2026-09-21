@@ -1622,6 +1622,7 @@ async def main(command: str) -> None:
                 )
                 different_user = {
                     "status": "unavailable",
+                    "opt_in_requested": second_user_token is not None,
                     "reason": (
                         "requires a second existing HA user token and explicit "
                         "HA_SWITCHBOARD_RUN_FOLLOW_UP=1 authorization; no auth mutation is performed"
@@ -1672,11 +1673,13 @@ async def main(command: str) -> None:
                         # Core's user/entity references in fixture evidence.
                         different_user = {
                             "status": "failed",
+                            "opt_in_requested": True,
                             "reason": "second-user identity or follow-up did not complete within the bounded probe",
                         }
 
                 expiry = {
                     "status": "unavailable",
+                    "opt_in_requested": run_natural_expiry,
                     "reason": (
                         "requires explicit HA_SWITCHBOARD_RUN_FOLLOW_UP=1 authorization and "
                         "waiting for the Core continuation TTL; covered by the bounded clock-controlled test"
@@ -1723,6 +1726,7 @@ async def main(command: str) -> None:
                     except Exception:
                         expiry = {
                             "status": "failed",
+                            "opt_in_requested": True,
                             "reason": "natural continuation expiry did not complete within the bounded wait",
                         }
 

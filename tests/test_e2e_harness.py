@@ -220,9 +220,12 @@ def test_t084_restart_authorization_is_type_strict_and_core_result_is_bounded(mo
     monkeypatch.setattr(api, "read_local_app_options", lambda: (options, {"gateway_token": "memory-only"}))
     monkeypatch.setattr(api, "wait_for_local_component", lambda *args, **kwargs: None)
 
-    # A non-bool authorization value must remain a no-op and issue no command.
-    read_only = api.restart_cycle(allow_restart="yes")
-    assert read_only["restart_performed"] is False
+    # Truthy strings, integers, and false-y non-bools must remain no-ops and
+    # issue no command.  Only the CLI-produced boolean True may authorize.
+    for unauthorized in ("yes", 1, 0, False, None):
+        read_only = api.restart_cycle(allow_restart=unauthorized)
+        assert read_only["restart_performed"] is False
+        assert read_only["mode"] == "read_only"
 
     def fake_host_command(args, **kwargs):
         commands.append(args)
@@ -687,7 +690,7 @@ def test_live_follow_up_forwards_token_by_environment_name_only(monkeypatch) -> 
         assert set(env) == {"PATH", "HA_SWITCHBOARD_FOLLOW_UP_SECOND_USER_ACCESS_TOKEN", "HA_SWITCHBOARD_RUN_FOLLOW_UP"}
         assert env["HA_SWITCHBOARD_FOLLOW_UP_SECOND_USER_ACCESS_TOKEN"] == supplied_token
         return SimpleNamespace(
-            stdout=b'{"command":"follow-up","different_user":{"status":"proved"}}\n',
+            stdout=b'{"command":"follow-up","different_user":{"status":"proved","opt_in_requested":true},"expiry":{"status":"unavailable","opt_in_requested":false}}\n',
             stderr=b"",
             returncode=0,
         )
@@ -696,6 +699,7 @@ def test_live_follow_up_forwards_token_by_environment_name_only(monkeypatch) -> 
     report = _run_live_follow_up_fixture()
 
     assert report["different_user"]["status"] == "proved"
+    assert report["different_user"]["opt_in_requested"] is True
     assert supplied_token not in json.dumps(report)
 
 
@@ -708,7 +712,7 @@ def test_live_follow_up_natural_expiry_timeout_covers_bounded_probe(monkeypatch)
         captured["timeout"] = timeout
         assert set(env) == {"PATH", "HA_SWITCHBOARD_RUN_FOLLOW_UP", "HA_SWITCHBOARD_RUN_FOLLOW_UP_NATURAL_EXPIRY"}
         return SimpleNamespace(
-            stdout=b'{"command":"follow-up","expiry":{"status":"unavailable"}}\n',
+            stdout=b'{"command":"follow-up","different_user":{"status":"unavailable","opt_in_requested":false},"expiry":{"status":"unavailable","opt_in_requested":true}}\n',
             stderr=b"",
             returncode=0,
         )
