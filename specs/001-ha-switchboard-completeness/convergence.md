@@ -2,7 +2,7 @@
 
 **Review date:** 2026-09-20
 **Worktree:** `ha-switchboard-ci-hardening`
-**Reviewed revision:** `299a5cb384445e109e9d729e98ee33de2d3f8bcd`
+**Reviewed revision:** `f05fada427fd2c503e370724de4a80d0ebe60e4b`
 (source revision used for the current local validation)
 **Scope:** This note records the current Spec Kit convergence boundary. The
 primary runtime, test, workflow, fixture, and user-document changes remain
@@ -68,7 +68,7 @@ evidence.
   validation. Standalone Compose has a credential-free bounded configuration
   smoke check, and Core diagnostics expose the last profile reconcile trigger.
 - Supervisor discovery retry is bounded and reuses a sanitized payload.
-- Latest full pytest result at the reviewed revision: `469 passed, 4 skipped`.
+- Latest full pytest result at the reviewed revision: `473 passed, 4 skipped`.
   The skips require the absent Home Assistant runtime/config-flow dependency
   in the host worktree and the two opt-in live fixture probes; they are not
   source or live proof by themselves.
@@ -131,6 +131,12 @@ The T084 source hardening was also integrated: restart authorization is
 type-strict and non-empty malformed or unsuccessful Core restart evidence is
 rejected. The protected restart cycle remains unrun and therefore does not
 close T084.
+
+The GHCR provenance verifier now requires exact response digests for each
+architecture child manifest and config blob, with regression coverage for
+missing and mismatched digests. Release workflow tests also enforce GHCR
+verification before the App E2E and publication steps; actual registry,
+mirror, and canary execution remains external.
 The known conditional `assist_surfaces` discovery boundary remains accurately
 described in `traceability.md`: the adapter only exports descriptive surfaces
 when the runtime supplies them, and does not claim complete Home Assistant

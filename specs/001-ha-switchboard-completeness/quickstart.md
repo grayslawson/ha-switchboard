@@ -18,7 +18,7 @@ release gates. The current source metadata agrees on App/Core version `0.2.0`,
 but that is source evidence, not installed or published-artifact proof.
 
 The current source-level run at `HEAD`
-`299a5cb384445e109e9d729e98ee33de2d3f8bcd` was `469 passed, 4 skipped`.
+`f05fada427fd2c503e370724de4a80d0ebe60e4b` was `473 passed, 4 skipped`.
 The tracked credential-free `tools/standalone-smoke.sh` is now included in
 the public export allowlist and the export regression check passes. External
 T149 gates remain open.
@@ -227,13 +227,13 @@ full provider responses in the evidence record.
 ## Observed source evidence for this pass
 
 - Worktree: `codex/fix-apparmor-runtime`, current `HEAD`
-  `299a5cb384445e109e9d729e98ee33de2d3f8bcd`. External publication gates
+  `f05fada427fd2c503e370724de4a80d0ebe60e4b`. External publication gates
   remain open.
 - Coordinated source version: `0.2.0` in the App config/image metadata, gateway
   package, Core manifest, and changelog.
 - Current local source checks: `python3 -m compileall -q
   app/ha_switchboard custom_components/ha_switchboard tools tests` passed;
-  `python3 -m pytest -q tests` passed (`469 passed, 4 skipped`); and
+  `python3 -m pytest -q tests` passed (`473 passed, 4 skipped`); and
   `python3 tools/check_release_boundary.py --quality` passed. The current
   skips are the unavailable host ConversationEntity/config-flow dependencies
   and two opt-in live fixture probes. `git diff --check` is clean for the
