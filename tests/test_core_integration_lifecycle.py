@@ -261,6 +261,7 @@ def test_recovery_watch_scans_after_app_restart_or_manual_request(monkeypatch):
         assert await async_setup_entry(hass, hass.entry)
         coordinator = hass.entry.runtime_data.coordinator
         assert len(gateway.reconciles) == 1
+        assert coordinator.status()["last_reconcile_trigger"] == "startup"
 
         gateway.status_payload = {
             "profile_revision": gateway.revision,
@@ -271,6 +272,7 @@ def test_recovery_watch_scans_after_app_restart_or_manual_request(monkeypatch):
         await coordinator._recovery_tick()
         assert len(gateway.reconciles) == 2
         assert coordinator.refresh_minutes == 7
+        assert coordinator.status()["last_reconcile_trigger"] == "recovery"
 
         gateway.status_payload = {
             "profile_revision": gateway.revision,

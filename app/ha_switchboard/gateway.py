@@ -415,7 +415,7 @@ class Gateway:
                 result = self._evaluate_batch(request, decision, batch)
             else:
                 result = self._evaluate_execution(request, decision)
-            if result.response_key in {"confidence_too_low", "ambiguous_request"} and self.routes.routes:
+            if result.response_key in {"confidence_too_low", "ambiguous_request", "invalid_parameters"} and self.routes.routes:
                 return self._remember(self._delegate(request, decision, batch=batch))
             return self._remember(result)
         if decision.route is RouteKind.DELEGATE:

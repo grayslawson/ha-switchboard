@@ -183,6 +183,36 @@ def test_delegated_typed_parameters_reenter_gateway_validation(tmp_path, sanitiz
     assert result.parameters == {"brightness": 42.0}
 
 
+def test_missing_jev_parameters_use_eligible_fallback(tmp_path, sanitized_discovery):
+    adapter = ParameterRouteAdapter("tool_proposal")
+    routes = _routes()
+    gateway = Gateway(
+        store=ProfileStore(tmp_path),
+        jev=StaticJevClient(JevDecision(RouteKind.ROUTINE_CONTROL, Complexity.SIMPLE)),
+        routes=routes,
+        handoff=HandoffBroker(routes, adapter),
+    )
+    gateway.reconcile(sanitized_discovery)
+    capability = next(item for item in gateway.active_profile.capabilities if item.operation == "set_brightness")
+    gateway.jev = StaticJevClient(JevDecision(
+        RouteKind.ROUTINE_CONTROL, Complexity.SIMPLE, capability.capability_id, 0.99, 0.01,
+    ))
+    result = gateway.process({
+        **_request(gateway, "Set the living room lights brightness to 42 percent", "jev-missing-parameter"),
+        "candidates": [{
+            "capability_id": capability.capability_id,
+            "display_name": capability.display_name,
+            "domain": capability.domain,
+            "operation": capability.operation,
+            "parameter_schema": capability.parameter_schema,
+        }],
+    })
+    assert result.kind is ResultKind.EXECUTE
+    assert result.response_key == "execute"
+    assert result.parameters == {"brightness": 42.0}
+    assert adapter.calls == 1
+
+
 def test_delegated_out_of_range_parameter_is_refused(tmp_path, sanitized_discovery):
     class BadParameterAdapter(ParameterRouteAdapter):
         def invoke(self, route, request):

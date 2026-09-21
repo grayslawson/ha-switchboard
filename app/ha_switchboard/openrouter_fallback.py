@@ -226,6 +226,11 @@ class OpenAICompatibleFallbackAdapter:
                 "operation": str(item.get("operation") or "")[:64],
                 "area": str(item.get("area") or "")[:128],
             }
+            parameter_schema = item.get("parameter_schema")
+            if isinstance(parameter_schema, Mapping):
+                # The gateway owns validation; this is bounded context only so
+                # an OpenAI-compatible fallback can supply missing values.
+                result[capability_id]["parameter_schema"] = parameter_schema
         return result
 
     def _request_payload(self, request: HandoffRequest, choices: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
@@ -237,6 +242,11 @@ class OpenAICompatibleFallbackAdapter:
                 "choice": {"type": ["string", "null"], "enum": [*choices, None]},
                 "text": {"type": "string", "maxLength": MAX_PROSE},
                 "reason": {"type": "string", "maxLength": 512},
+                "parameters": {
+                    "type": "object",
+                    "maxProperties": 8,
+                    "additionalProperties": {"type": ["string", "number", "boolean", "null"]},
+                },
             },
             "required": ["kind", "choice", "text", "reason"],
         }
@@ -279,7 +289,7 @@ class OpenAICompatibleFallbackAdapter:
             if isinstance(result, str) and result.strip() and len(result) <= MAX_PROSE:
                 return {"handoff_id": request.handoff_id, "kind": ResponseKind.PROSE_RESPONSE.value, "text": result.strip()}
             raise OpenRouterFallbackInvalidResponse("fallback result is not an object")
-        if set(result) - {"kind", "choice", "text", "reason"}:
+        if set(result) - {"kind", "choice", "text", "reason", "parameters"}:
             raise OpenRouterFallbackInvalidResponse("fallback result contains unsupported fields")
         kind = result.get("kind")
         if kind == ResponseKind.PROSE_RESPONSE.value:
@@ -297,10 +307,22 @@ class OpenAICompatibleFallbackAdapter:
             raise OpenRouterFallbackInvalidResponse("fallback proposal reason is invalid")
         if result.get("text") not in (None, ""):
             raise OpenRouterFallbackInvalidResponse("fallback proposal contains prose")
+        parameters = result.get("parameters", {})
+        if not isinstance(parameters, Mapping) or len(parameters) > 8:
+            raise OpenRouterFallbackInvalidResponse("fallback proposal parameters are invalid")
+        if any(not isinstance(key, str) or not key or len(key) > 64 for key in parameters):
+            raise OpenRouterFallbackInvalidResponse("fallback proposal parameter names are invalid")
+        if any(not isinstance(value, (str, int, float, bool)) and value is not None for value in parameters.values()):
+            raise OpenRouterFallbackInvalidResponse("fallback proposal parameter values are invalid")
         return {
             "handoff_id": request.handoff_id,
             "kind": kind,
-            "proposals": [{"capability_id": choice, "parameter_refs": [], "reason": reason.strip()}],
+            "proposals": [{
+                "capability_id": choice,
+                "parameter_refs": [],
+                "parameters": dict(parameters),
+                "reason": reason.strip(),
+            }],
         }
 
 

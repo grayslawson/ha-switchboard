@@ -111,6 +111,7 @@ class ProfileCoordinator:
         self._last_scan_error: str | None = None
         self._scan_trigger: str | None = None
         self._last_reconcile_at: str | None = None
+        self._last_reconcile_trigger: str | None = None
         self._reconcile_count = 0
         self._app_generation: str | None = None
 
@@ -119,13 +120,18 @@ class ProfileCoordinator:
             return
         await self.client.health()
         await self._refresh_app_options()
-        await self.async_reconcile()
+        await self.async_reconcile(trigger="startup")
         self._register_event_listeners()
         self._start_periodic_refresh()
         self._start_recovery_watch()
         self._started = True
 
-    async def async_reconcile(self) -> dict[str, Any]:
+    async def async_reconcile(self, *, trigger: str = "lifecycle") -> dict[str, Any]:
+        """Rebuild the profile and record which lifecycle path activated it."""
+
+        if trigger not in {"startup", "manual", "invalidation", "recovery", "periodic", "lifecycle"}:
+            trigger = "lifecycle"
+        self._last_reconcile_trigger = trigger
         async with self._reconcile_lock:
             result: dict[str, Any] = {}
             try:
@@ -166,7 +172,7 @@ class ProfileCoordinator:
             request_scan = getattr(self.client, "scan", None)
             if callable(request_scan):
                 await request_scan()
-            result = await self.async_reconcile()
+            result = await self.async_reconcile(trigger="manual")
             self._scan_state = "completed"
             self._last_scan_result = "completed"
             self._last_scan_at = _utc_now()
@@ -226,7 +232,7 @@ class ProfileCoordinator:
         self._profile_generation += 1
         try:
             await self.client.invalidate(kind)
-            await self.async_reconcile()
+            await self.async_reconcile(trigger="invalidation")
         except Exception as exc:  # retain the last map but fail closed for writes
             self.last_error = type(exc).__name__
 
@@ -304,6 +310,7 @@ class ProfileCoordinator:
             "scan_generation": self._scan_generation,
             "scan_trigger": self._scan_trigger,
             "last_reconcile_at": self._last_reconcile_at,
+            "last_reconcile_trigger": self._last_reconcile_trigger,
             "reconcile_count": self._reconcile_count,
             "warning_count": len(self._build.snapshot.get("warnings", ())) if self._build else 0,
             "entity_count": len(self._build.snapshot.get("entities", ())) if self._build else 0,
@@ -380,7 +387,7 @@ class ProfileCoordinator:
                 except Exception as exc:
                     self.last_error = type(exc).__name__
             try:
-                await self.async_reconcile()
+                await self.async_reconcile(trigger="invalidation")
             except Exception as exc:
                 self.last_error = type(exc).__name__
 
@@ -498,7 +505,7 @@ class ProfileCoordinator:
             generation = status.get("generation") if isinstance(status, Mapping) else None
             generation_changed = generation is not None and str(generation) != self._app_generation
             if status.get("status") != "active" or pending or generation_changed or status.get("profile_revision") != self.profile_revision:
-                await self.async_reconcile()
+                await self.async_reconcile(trigger="recovery")
         except Exception as exc:
             self.last_error = type(exc).__name__
 
@@ -509,7 +516,7 @@ class ProfileCoordinator:
 
     async def _periodic_refresh(self, _now: Any = None) -> None:
         try:
-            await self.async_reconcile()
+            await self.async_reconcile(trigger="periodic")
         except Exception as exc:
             self.last_error = type(exc).__name__
 

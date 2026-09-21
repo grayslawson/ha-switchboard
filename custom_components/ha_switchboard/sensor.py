@@ -26,7 +26,7 @@ _STATUS_KEYS = frozenset({
     "status", "stale", "capability_count", "last_reconciled_at",
     "connected", "scan_state", "last_scan_result", "last_scan_at",
     "last_scan_error", "scan_generation", "scan_trigger",
-    "last_reconcile_at", "reconcile_count", "warning_count",
+    "last_reconcile_at", "last_reconcile_trigger", "reconcile_count", "warning_count",
     "entity_count", "routine_count", "service_count", "last_error",
 })
 
@@ -40,6 +40,7 @@ def _safe_status(status: Mapping[str, Any]) -> dict[str, Any]:
         if key in {
             "status", "last_reconciled_at", "last_scan_at", "last_scan_error",
             "scan_trigger", "last_reconcile_at", "last_error",
+            "last_reconcile_trigger",
         } and isinstance(value, str):
             safe[key] = value[:128]
         elif key == "stale" and isinstance(value, bool):

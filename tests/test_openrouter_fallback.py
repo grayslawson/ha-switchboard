@@ -64,6 +64,34 @@ def test_sends_offered_choices_with_strict_no_tools_schema(monkeypatch: pytest.M
     assert captured["body"]["max_tokens"] <= 512
 
 
+def test_openai_compatible_fallback_can_return_bounded_typed_parameters(monkeypatch: pytest.MonkeyPatch) -> None:
+    request = replace(
+        _request(),
+        relevant_facts=({
+            "capability_id": "cap-light-a",
+            "display_name": "Downstairs lights",
+            "parameter_schema": {
+                "required": ["brightness"],
+                "properties": {"brightness": {"type": "number", "minimum": 0, "maximum": 100}},
+            },
+        },),
+    )
+
+    def urlopen(request_obj, timeout):
+        body = json.loads(request_obj.data)
+        choice = body["messages"][1]["content"]
+        assert "brightness" in choice
+        return _Response({"choices": [{"message": {"content": (
+            '{"kind":"tool_proposal","choice":"cap-light-a","text":"",'
+            '"reason":"matched","parameters":{"brightness":42}}'
+        )}}]})
+
+    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    result = OpenRouterFallbackAdapter().invoke(None, request)
+
+    assert result["proposals"][0]["parameters"] == {"brightness": 42}
+
+
 def test_prose_response_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "urllib.request.urlopen",

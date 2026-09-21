@@ -127,6 +127,7 @@ def test_manual_scans_are_requested_once_and_coalesced():
         assert first["profile_revision"] == second["profile_revision"] == "profile-one"
         assert gateway.scans == 1
         assert coordinator.status()["scan_state"] == "completed"
+        assert coordinator.status()["last_reconcile_trigger"] == "manual"
         await coordinator.async_shutdown()
 
     asyncio.run(run())
@@ -166,6 +167,7 @@ def test_events_arriving_during_reconcile_are_drained_by_one_flush():
         # the coalesced event flush performs the replacement reconcile.
         assert gateway.reconciles == 3
         assert coordinator.status()["pending_events"] == []
+        assert coordinator.status()["last_reconcile_trigger"] == "invalidation"
         await coordinator.async_shutdown()
 
     asyncio.run(run())
