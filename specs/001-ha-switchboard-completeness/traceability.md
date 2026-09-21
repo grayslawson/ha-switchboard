@@ -1,7 +1,7 @@
 # HA Switchboard 0.2.0 requirements traceability
 
 **Review date:** 2026-09-20
-**Reviewed revision:** `82077cd233b028ea7cd1c8dd817e8014a43353dd` on
+**Reviewed revision:** `299a5cb384445e109e9d729e98ee33de2d3f8bcd` on
 `codex/fix-apparmor-runtime`
 **Purpose:** distinguish behavior present in source and focused tests from the
 future-completeness target described by `spec.md`, `plan.md`, and the contract
@@ -48,8 +48,8 @@ The current checkout has focused source/test evidence for these safe boundaries:
   `tests/test_server.py::test_supervisor_discovery_retry_is_bounded` cover the
   source-level behavior.
 
-The latest full repository test run on 2026-09-20 was `464 passed, 4 skipped`. The
-skips were the Home Assistant config-flow/runtime tests because the
+The latest repository test run was `469 passed, 4 skipped`. The skips were
+the Home Assistant config-flow/runtime tests because the
 `homeassistant` package is not installed in this host worktree; they are not
 source-test proof. A separate read-only check of the preserved local
 Supervisor harness confirmed Core/Supervisor HTTP 200, App readiness, the
@@ -57,6 +57,21 @@ persisted `hassio` integration entry, `conversation.ha_switchboard`, three
 Assist pipelines, and fixture entities across the published mock domains. No
 provider call or secret was used. No public-release, GHCR/mirror,
 HACS/App-catalog, or live-canary evidence was claimed by this pass.
+
+### Final audit refresh
+
+The public-export finding identified during the audit is fixed at the reviewed
+revision: `tools/standalone-smoke.sh` is explicitly allowlisted and the
+regression test requires it to appear in the export. The full source suite is
+`469 passed, 4 skipped`, and the release-boundary and quality checks pass.
+This closes the local exporter defect but does not establish public mirror,
+GHCR, HACS, multi-architecture, or live-canary acceptance.
+
+The current source still conditionally exports descriptive `assist_surfaces`
+when Home Assistant supplies them; a normal runtime with no such source yields
+an empty list. The broad requirement for complete Assist-surface discovery is
+therefore still partial, as documented below, and no stale documentation was
+found claiming that boundary is complete.
 
 ## Functional requirements
 

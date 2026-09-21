@@ -18,7 +18,10 @@ release gates. The current source metadata agrees on App/Core version `0.2.0`,
 but that is source evidence, not installed or published-artifact proof.
 
 The current source-level run at `HEAD`
-`742130c27a214e5bc4f5e6edbbb5d13af8e597bf` was `468 passed, 4 skipped`.
+`299a5cb384445e109e9d729e98ee33de2d3f8bcd` was `469 passed, 4 skipped`.
+The tracked credential-free `tools/standalone-smoke.sh` is now included in
+the public export allowlist and the export regression check passes. External
+T149 gates remain open.
 The skips are the unavailable host ConversationEntity/config-flow dependencies
 and two explicitly opt-in live fixture probes. No command in this
 reconciliation reset, removed, recreated, reconfigured, or restarted the
@@ -224,20 +227,19 @@ full provider responses in the evidence record.
 ## Observed source evidence for this pass
 
 - Worktree: `codex/fix-apparmor-runtime`, current `HEAD`
-  `742130c27a214e5bc4f5e6edbbb5d13af8e597bf`. This is the source revision
-  used for the current read-only checks; external publication gates remain
-  open.
+  `299a5cb384445e109e9d729e98ee33de2d3f8bcd`. External publication gates
+  remain open.
 - Coordinated source version: `0.2.0` in the App config/image metadata, gateway
   package, Core manifest, and changelog.
 - Current local source checks: `python3 -m compileall -q
   app/ha_switchboard custom_components/ha_switchboard tools tests` passed;
-  `python3 -m pytest -q tests` passed (`468 passed, 4 skipped`); and
+  `python3 -m pytest -q tests` passed (`469 passed, 4 skipped`); and
   `python3 tools/check_release_boundary.py --quality` passed. The current
   skips are the unavailable host ConversationEntity/config-flow dependencies
   and two opt-in live fixture probes. `git diff --check` is clean for the
   owned paths.
-- The current read-only public export passed as `public export: PASS (204
-  tracked files)`; its temporary export contained 117 regular files and
+- The current read-only public export passed as `public export: PASS (207
+  tracked files)`; its temporary export contained 119 regular files and
   `check_release_boundary.py --root` passed. This is local export evidence,
   not HACS, public-mirror, GHCR, or release proof.
 - The preserve-first runtime guards now verify Docker volume identity and

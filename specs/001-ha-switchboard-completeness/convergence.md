@@ -2,8 +2,8 @@
 
 **Review date:** 2026-09-20
 **Worktree:** `ha-switchboard-ci-hardening`
-**Reviewed revision:** `742130c27a214e5bc4f5e6edbbb5d13af8e597bf`
-(current source revision)
+**Reviewed revision:** `299a5cb384445e109e9d729e98ee33de2d3f8bcd`
+(source revision used for the current local validation)
 **Scope:** This note records the current Spec Kit convergence boundary. The
 primary runtime, test, workflow, fixture, and user-document changes remain
 owned by their respective workstreams.
@@ -68,14 +68,14 @@ evidence.
   validation. Standalone Compose has a credential-free bounded configuration
   smoke check, and Core diagnostics expose the last profile reconcile trigger.
 - Supervisor discovery retry is bounded and reuses a sanitized payload.
-- Latest full pytest result at the reviewed revision: `468 passed, 4 skipped`.
+- Latest full pytest result at the reviewed revision: `469 passed, 4 skipped`.
   The skips require the absent Home Assistant runtime/config-flow dependency
   in the host worktree and the two opt-in live fixture probes; they are not
   source or live proof by themselves.
 - The current focused release/boundary/local-dev/workflow suite passes (`24
   passed`),
-  the quality audit passes, and the sanitized public export contains `204`
-  tracked files and `117` regular files before its release-boundary check.
+  the quality audit passes, and the sanitized public export contains `207`
+  tracked files and `119` regular files before its release-boundary check.
   The release workflows validate the changelog marker, the Home Assistant
   conversation-agent translation shape, and the bounded App-image E2E gate
   before tag publication.
@@ -112,3 +112,26 @@ The task ledger contains older narrative snapshots, including a `109`-file
 export count and earlier test totals, alongside its later `437`-test snapshot.
 Those historical lines are outside this worker's allowed scope; the exact
 current counts above are the ones to use for this documentation review.
+
+## Final source/spec audit — 2026-09-20
+
+The audit was limited to the current implementation, feature artifacts,
+README/docs, and focused source checks. `just agent-preflight` remains
+unavailable in this nested worktree because it has no Justfile. No HA restart,
+external publication, provider request, or task-ledger state change was made.
+
+The audit's public-export finding was corrected in the reviewed source:
+`tools/standalone-smoke.sh` is now explicitly allowlisted and the public-export
+regression test asserts that it is present. The current full test result is
+`469 passed, 4 skipped`; release-boundary, quality, and public-export checks
+pass locally. This closes the local exporter defect but does not close the
+external T149 gates.
+
+The T084 source hardening was also integrated: restart authorization is
+type-strict and non-empty malformed or unsuccessful Core restart evidence is
+rejected. The protected restart cycle remains unrun and therefore does not
+close T084.
+The known conditional `assist_surfaces` discovery boundary remains accurately
+described in `traceability.md`: the adapter only exports descriptive surfaces
+when the runtime supplies them, and does not claim complete Home Assistant
+Assist-surface discovery.

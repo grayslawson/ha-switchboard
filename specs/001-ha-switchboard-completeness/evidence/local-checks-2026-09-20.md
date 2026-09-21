@@ -7,20 +7,20 @@ raw entity identifiers, utterances, provider bodies, or volume paths are
 retained here.
 
 Current baseline: branch `codex/fix-apparmor-runtime`, `HEAD`
-`742130c27a214e5bc4f5e6edbbb5d13af8e597bf`, coordinated App/Core version
+`299a5cb384445e109e9d729e98ee33de2d3f8bcd`, coordinated App/Core version
 `0.2.0`.
 
 ## Source and packaging
 
 | Gate | Result | Evidence |
 | --- | --- | --- |
-| Full source tests | passed with expected skips | `python3 -m pytest -q tests` — `468 passed, 4 skipped`. Skips are the unavailable host ConversationEntity/config-flow dependencies and the two opt-in live fixture probes. |
+| Full source tests | passed with expected skips | `python3 -m pytest -q tests` — `469 passed, 4 skipped`. Skips are the unavailable host ConversationEntity/config-flow dependencies and the two opt-in live fixture probes. |
 | Compilation and quality | passed | `python3 -m compileall -q app/ha_switchboard custom_components/ha_switchboard tools tests`; `python3 tools/check_release_boundary.py --quality`; `git diff --check` for the owned paths. |
 | Workflow lint | passed | `actionlint -config-file .github/actionlint.yaml .forgejo/workflows/*.yml`. |
 | Publication workflow hardening | passed locally | `python3 -m pytest -q tests/test_release_workflows.py tests/test_release_boundary.py tests/test_local_dev.py` — `24 passed`; the mirror workflow now requires the exact source/tag revision, commit marker, GHCR gate, and App-image E2E gate before public publication. |
-| Public export | passed locally | `python3 tools/ha-switchboard-export-public.py <temporary-directory>` — `public export: PASS (204 tracked files)`; the temporary export contained 117 regular files, and `python3 <temporary-export>/tools/check_release_boundary.py --root <temporary-export>` passed. This is not HACS, public-mirror, GHCR, or release proof. |
+| Public export | passed locally | `python3 tools/ha-switchboard-export-public.py <temporary-directory>` — `public export: PASS (207 tracked files)`; the temporary export contained 119 regular files, and `python3 <temporary-export>/tools/check_release_boundary.py --root <temporary-export>` passed. This is not HACS, public-mirror, GHCR, or release proof. |
 | Provenance gate hardening | passed locally | `python3 -m pytest -q tests/test_ghcr_revision_gate.py` — `8 passed`; the verifier now supports sanitized offline records, anonymous read-only registry validation, immutable digests, exact architecture sets, and release/image/source revision agreement. It does not turn the currently mismatched public `v0.2.0` artifact into a valid candidate. |
-| Local App-image smoke/E2E | passed for current source | `bash tools/app-image-smoke.sh` and `bash tools/app-image-e2e.sh` exited `0` for `742130c`; local image, non-root runtime, Supervisor-like ingress/token boundary, persistence/recreate, and bounded cleanup checks passed. AppArmor was accurately reported unavailable on this WSL host. |
+| Local App-image smoke/E2E | passed for current source | `bash tools/app-image-smoke.sh` and `bash tools/app-image-e2e.sh` exited `0` for `299a5cb`; local image, non-root runtime, Supervisor-like ingress/token boundary, persistence/recreate, and bounded cleanup checks passed. AppArmor was accurately reported unavailable on this WSL host. |
 | Standalone Compose model | passed for current source | `bash tools/standalone-smoke.sh` rendered the Compose model with an isolated empty environment and passed loopback publication, read-only root, persistent `/data`, healthcheck, standalone-boundary, and secret-free wiring checks. |
 
 ## Preserved local runtime
@@ -61,10 +61,10 @@ request was performed for this evidence record.
 ## Current checkout reconciliation — 2026-09-20
 
 The current source descendant at `HEAD
-742130c` was freshly checked with the full source suite (`468 passed, 4 skipped`), compilation,
+299a5cb` was freshly checked with the full source suite (`469 passed, 4 skipped`), compilation,
 `check_release_boundary.py --quality`, `check_release_boundary.py`, and
-`git diff --check`. A fresh read-only public export passed with `204` tracked
-files and `117` regular files; the exported-tree release boundary passed. The
+`git diff --check`. A fresh read-only public export passed with `207` tracked
+files and `119` regular files; the exported-tree release boundary passed. The
 focused release/provenance/acceptance/boundary/local-dev/workflow suite passed
 `44 tests`, and the focused group/harness suite passed `61 tests with 1
 opt-in skip`.
