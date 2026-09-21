@@ -2,7 +2,7 @@
 
 **Review date:** 2026-09-20
 **Worktree:** `ha-switchboard-ci-hardening`
-**Reviewed revision:** `82077cd233b028ea7cd1c8dd817e8014a43353dd`
+**Reviewed revision:** `742130c27a214e5bc4f5e6edbbb5d13af8e597bf`
 (current source revision)
 **Scope:** This note records the current Spec Kit convergence boundary. The
 primary runtime, test, workflow, fixture, and user-document changes remain
@@ -62,8 +62,13 @@ evidence.
   browser-level accessibility inspection remains an open acceptance gate.
 - `tools/local-dev.sh` preserves the local Supervisor/Core volume by default;
   reset is guarded by a verified snapshot and explicit confirmation.
+- The OpenAI-compatible fallback accepts bounded typed scalar parameters from a
+  fallback proposal when Jev's parameters are incomplete or invalid; the
+  gateway still owns schema, allowlist, confirmation, freshness, and execution
+  validation. Standalone Compose has a credential-free bounded configuration
+  smoke check, and Core diagnostics expose the last profile reconcile trigger.
 - Supervisor discovery retry is bounded and reuses a sanitized payload.
-- Latest full pytest result at the reviewed revision: `464 passed, 4 skipped`.
+- Latest full pytest result at the reviewed revision: `468 passed, 4 skipped`.
   The skips require the absent Home Assistant runtime/config-flow dependency
   in the host worktree and the two opt-in live fixture probes; they are not
   source or live proof by themselves.

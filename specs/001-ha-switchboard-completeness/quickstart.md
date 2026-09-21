@@ -18,7 +18,7 @@ release gates. The current source metadata agrees on App/Core version `0.2.0`,
 but that is source evidence, not installed or published-artifact proof.
 
 The current source-level run at `HEAD`
-`82077cd233b028ea7cd1c8dd817e8014a43353dd` was `464 passed, 4 skipped`.
+`742130c27a214e5bc4f5e6edbbb5d13af8e597bf` was `468 passed, 4 skipped`.
 The skips are the unavailable host ConversationEntity/config-flow dependencies
 and two explicitly opt-in live fixture probes. No command in this
 reconciliation reset, removed, recreated, reconfigured, or restarted the
@@ -224,14 +224,14 @@ full provider responses in the evidence record.
 ## Observed source evidence for this pass
 
 - Worktree: `codex/fix-apparmor-runtime`, current `HEAD`
-  `82077cd233b028ea7cd1c8dd817e8014a43353dd`. This is the source revision
+  `742130c27a214e5bc4f5e6edbbb5d13af8e597bf`. This is the source revision
   used for the current read-only checks; external publication gates remain
   open.
 - Coordinated source version: `0.2.0` in the App config/image metadata, gateway
   package, Core manifest, and changelog.
 - Current local source checks: `python3 -m compileall -q
   app/ha_switchboard custom_components/ha_switchboard tools tests` passed;
-  `python3 -m pytest -q tests` passed (`464 passed, 4 skipped`); and
+  `python3 -m pytest -q tests` passed (`468 passed, 4 skipped`); and
   `python3 tools/check_release_boundary.py --quality` passed. The current
   skips are the unavailable host ConversationEntity/config-flow dependencies
   and two opt-in live fixture probes. `git diff --check` is clean for the

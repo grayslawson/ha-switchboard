@@ -434,7 +434,7 @@ all user stories are implemented.
   path, credentials, query, or fragment), and its regression test is included
   in the current source result. T059 now also supports explicitly supplied
   second-user and natural-TTL opt-ins without changing the safe default or
-  persisting credentials. The current source result is 464 tests with 4
+  persisting credentials. The current source result is 468 tests with 4
   expected skips; the preserve-first/local-acceptance focused suite passes
   32 tests with one opt-in live skip.
 - Latest multi-target/UI hardening: explicit light, switch, and fan on/off
@@ -450,6 +450,14 @@ all user stories are implemented.
   deterministic acceptance path, and local development/image helpers now fail
   closed when bounded timeout support is unavailable. Live restart, provider,
   and external-release evidence remains intentionally open.
+- Latest provider/deployment hardening: invalid Jev parameters now enter the
+  configured bounded OpenAI-compatible fallback path, fallback proposals may
+  supply bounded typed scalar parameters for gateway validation, the
+  standalone Compose model has a credential-free bounded smoke validator, and
+  Core diagnostics expose the last reconcile trigger (`startup`, `manual`,
+  `invalidation`, `recovery`, or `periodic`). The current source result is
+  **468 passed, 4 skipped**; these changes do not close the live provider or
+  external-release gates.
 - Requirements-quality status is separate from implementation status:
   `checklists/completeness.md` is now **57 of 57 checked**. The final five
   criteria were closed against the current migration behavior, reviewed
