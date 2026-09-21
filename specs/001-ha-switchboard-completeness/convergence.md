@@ -2,7 +2,7 @@
 
 **Review date:** 2026-09-20
 **Worktree:** `ha-switchboard-ci-hardening`
-**Reviewed revision:** `f05fada427fd2c503e370724de4a80d0ebe60e4b`
+**Reviewed revision:** `e5b20bedd4b06bbb1f70be092030471ceabae3fa`
 (source revision used for the current local validation)
 **Scope:** This note records the current Spec Kit convergence boundary. The
 primary runtime, test, workflow, fixture, and user-document changes remain
@@ -68,7 +68,7 @@ evidence.
   validation. Standalone Compose has a credential-free bounded configuration
   smoke check, and Core diagnostics expose the last profile reconcile trigger.
 - Supervisor discovery retry is bounded and reuses a sanitized payload.
-- Latest full pytest result at the reviewed revision: `473 passed, 4 skipped`.
+- Latest full pytest result at the reviewed revision: `474 passed, 4 skipped`.
   The skips require the absent Home Assistant runtime/config-flow dependency
   in the host worktree and the two opt-in live fixture probes; they are not
   source or live proof by themselves.
@@ -137,6 +137,12 @@ architecture child manifest and config blob, with regression coverage for
 missing and mismatched digests. Release workflow tests also enforce GHCR
 verification before the App E2E and publication steps; actual registry,
 mirror, and canary execution remains external.
+
+The App entrypoint now validates listener ports with bounded decimal patterns,
+including oversized values that would overflow shell integer comparisons. The
+dashboard diagnostics view adds redacted guidance, result counts, explicit
+empty/error states, and a clear-filters action without changing provider or
+execution semantics.
 The known conditional `assist_surfaces` discovery boundary remains accurately
 described in `traceability.md`: the adapter only exports descriptive surfaces
 when the runtime supplies them, and does not claim complete Home Assistant

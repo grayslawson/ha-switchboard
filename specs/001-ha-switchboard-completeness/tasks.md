@@ -372,7 +372,7 @@ all user stories are implemented.
 - Ledger state: **148 of 153 tasks checked; 5 remain open**. The checked
   tasks represent implemented source/artifacts with focused evidence; they do
   not imply that the public release gates are complete.
-- Source evidence: the latest `python3 -m pytest -q` passes **473 tests with 4
+- Source evidence: the latest `python3 -m pytest -q` passes **474 tests with 4
   expected skips**. Two skips require the Home Assistant 2026.9
   runtime/config-flow dependency; the other two are opt-in live follow-up and
   native-miss probes. The focused provider/Web UI hardening suite passes **48
@@ -434,7 +434,7 @@ all user stories are implemented.
   path, credentials, query, or fragment), and its regression test is included
   in the current source result. T059 now also supports explicitly supplied
   second-user and natural-TTL opt-ins without changing the safe default or
-  persisting credentials. The current source result is 473 tests with 4
+  persisting credentials. The current source result is 474 tests with 4
   expected skips; the preserve-first/local-acceptance focused suite passes
   32 tests with one opt-in live skip.
 - Latest multi-target/UI hardening: explicit light, switch, and fan on/off
@@ -456,7 +456,7 @@ all user stories are implemented.
   standalone Compose model has a credential-free bounded smoke validator, and
   Core diagnostics expose the last reconcile trigger (`startup`, `manual`,
   `invalidation`, `recovery`, or `periodic`). The current source result is
-  **473 passed, 4 skipped**; these changes do not close the live provider or
+  **474 passed, 4 skipped**; these changes do not close the live provider or
   external-release gates.
 - Latest recovery hardening: the authorized restart path now requires a
   strict boolean opt-in, rejects malformed or unsuccessful non-empty Core
@@ -466,6 +466,10 @@ all user stories are implemented.
   descriptor/child-manifest and config-blob response digests, and release
   workflow tests enforce GHCR verification before App E2E and publication.
   External registry, mirror, and canary evidence remains open.
+- Latest App/UI hardening: the App entrypoint rejects non-canonical listener
+  ports outside `1..65535` without shell integer overflow, and the dashboard
+  diagnostics view now provides redacted guidance, counts, explicit empty/error
+  states, and a clear-filters action. AppArmor remains unproven on WSL.
 - Requirements-quality status is separate from implementation status:
   `checklists/completeness.md` is now **57 of 57 checked**. The final five
   criteria were closed against the current migration behavior, reviewed

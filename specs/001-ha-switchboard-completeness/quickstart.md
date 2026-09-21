@@ -18,7 +18,7 @@ release gates. The current source metadata agrees on App/Core version `0.2.0`,
 but that is source evidence, not installed or published-artifact proof.
 
 The current source-level run at `HEAD`
-`f05fada427fd2c503e370724de4a80d0ebe60e4b` was `473 passed, 4 skipped`.
+`e5b20bedd4b06bbb1f70be092030471ceabae3fa` was `474 passed, 4 skipped`.
 The tracked credential-free `tools/standalone-smoke.sh` is now included in
 the public export allowlist and the export regression check passes. External
 T149 gates remain open.
@@ -32,14 +32,25 @@ The preserved local Supervisor harness was checked read-only on this date:
 `local_api.py startup` reported `mode=read_only`, `ready=true`, the existing
 `ha_switchboard` entry, the conversation agent, 28 fixture entities, 28 active
 capabilities, a revision, and zero pending sections/invalidations. This is
-local-runtime proof, not public-release or live-provider proof.
+local-runtime proof, not public-release or live-provider proof. The bounded
+commands `python3 tools/local-fixtures/local_api.py startup` and
+`python3 tools/local-fixtures/local_api.py restart-cycle` both exited `0`; the
+default restart inspection reported `restart_requested=false` and
+`restart_performed=false`. No `--allow-restart` was passed.
+
+The same read-only slice reran compilation, both release-boundary checks, the
+public export and exported-tree boundary, `bash tools/standalone-smoke.sh`,
+and the credential-free Podman App-image smoke/E2E checks. All exited `0`;
+AppArmor enforcement was unavailable on this host and no profile was
+requested. No provider credentials, profile scan, publication, or Home
+Assistant mutation was used.
 
 **Additional sanitized local evidence (2026-09-20):** Earlier bounded local
 records show `lifecycle`, `profile`, and `scan` evidence: the scan received
 HTTP 202 and reached `completion: settled` with an active/no-pending profile.
-The default `restart-cycle` inspection was a no-op. These checks were not
-rerun in this read-only reconciliation, and they do not prove the opt-in
-App/Core restart cycle. The separate readiness record confirms that no
+The earlier scan record was not rerun in this read-only reconciliation. The
+default `restart-cycle` inspection was rerun as a no-op, and it does not prove
+the opt-in App/Core restart cycle. The separate readiness record confirms that no
 non-owner access token is available for the cross-user probe and that the
 protected restart preflight was ready but not authorized.
 
@@ -227,13 +238,13 @@ full provider responses in the evidence record.
 ## Observed source evidence for this pass
 
 - Worktree: `codex/fix-apparmor-runtime`, current `HEAD`
-  `f05fada427fd2c503e370724de4a80d0ebe60e4b`. External publication gates
+  `e5b20bedd4b06bbb1f70be092030471ceabae3fa`. External publication gates
   remain open.
 - Coordinated source version: `0.2.0` in the App config/image metadata, gateway
   package, Core manifest, and changelog.
 - Current local source checks: `python3 -m compileall -q
   app/ha_switchboard custom_components/ha_switchboard tools tests` passed;
-  `python3 -m pytest -q tests` passed (`473 passed, 4 skipped`); and
+  `python3 -m pytest -q tests` passed (`474 passed, 4 skipped`); and
   `python3 tools/check_release_boundary.py --quality` passed. The current
   skips are the unavailable host ConversationEntity/config-flow dependencies
   and two opt-in live fixture probes. `git diff --check` is clean for the
