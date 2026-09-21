@@ -150,7 +150,7 @@ scenarios through a fixture pipeline.
 - [x] T056 [P] [US4] Add parameter schema/range/enum extraction and normalization tests in tests/test_gateway_parameters.py
 - [x] T057 [P] [US4] Add missing, invalid, conflicting, and overflow parameter tests in tests/test_gateway_parameters.py and tests/test_execution.py
 - [x] T058 [P] [US4] Add clarification/confirmation context lifecycle tests in tests/test_conversation_context.py
-- [ ] T059 [US4] Complete live follow-up Assist runtime verification for same conversation, different user, expiry, cancellation, and replay in tests/test_e2e_harness.py (the bounded Core-container probe now proves same-conversation/cancellation/replay; deterministic tests cover user binding/TTL; explicit second-user-token and natural-TTL opt-ins are implemented, but live proof remains pending because those inputs have not been authorized/run)
+- [ ] T059 [US4] Complete live follow-up Assist runtime verification for same conversation, different user, expiry, cancellation, and replay in tests/test_e2e_harness.py (deterministic tests cover user binding/TTL/cancellation/replay; the bounded live probe created and removed a temporary second user, but the configured provider refused or clarified the high-risk fixture instead of producing a confirmation, so provider-dependent live acceptance remains open)
 
 ### Implementation for User Story 4
 
@@ -211,7 +211,7 @@ App, and inspect status/revision/write behavior.
 - [x] T081 [P] [US6] Add every registry/exposure/state/reconnect/restart invalidation test in tests/test_change_monitor.py
 - [x] T082 [P] [US6] Add manual-scan authentication, coalescing, progress, failure, and stale-profile tests (implemented in tests/test_manual_scan_acceptance.py with bounded live scan evidence)
 - [x] T083 [P] [US6] Add generation-race, malformed-snapshot, oversized-snapshot, and atomic-replacement tests in tests/test_profile.py and tests/test_adapter_contract.py
-- [ ] T084 [US6] Complete authorized live local startup/scan/restart verification in tools/local-fixtures/local_api.py and tests/test_e2e_harness.py (preserve-first volume identity/profile/fixture guards and read-only startup/scan/restart inspection pass; the protected App/Core restart cycle remains)
+- [ ] T084 [US6] Complete authorized live local startup/scan/restart verification in tools/local-fixtures/local_api.py and tests/test_e2e_harness.py (preserve-first volume identity/profile/fixture guards, startup/scan, and bounded manual App/Core recovery pass; the automated restart-cycle harness still has a one-shot post-App readiness race to fix)
 
 ### Implementation for User Story 6
 
@@ -357,7 +357,7 @@ all user stories are implemented.
 - [x] T145 [P] Update release acceptance, rollback, live-proof, artifact-provenance, App security, and external-acceptance guidance in docs/RELEASE.md
 - [x] T146 Add final App/Core contract compatibility check and version policy in app/config.yaml, custom_components/ha_switchboard/manifest.json, pyproject.toml, and app/ha_switchboard/__init__.py
 - [x] T147 Add final static checks for response-language prohibition, secret redaction, raw-ID boundary, and documentation drift in tests/test_quality_audit.py
-- [ ] T148 Run the complete quickstart acceptance guide and record sanitized evidence in specs/001-ha-switchboard-completeness/quickstart.md (current local source/image/startup/scan/native/follow-up evidence is recorded in `evidence/local-checks-2026-09-20.md`; lifecycle, provider, security-enforcement, and external-release portions remain)
+- [ ] T148 Run the complete quickstart acceptance guide and record sanitized evidence in specs/001-ha-switchboard-completeness/quickstart.md (the v0.2.1 source/public-export gates and preserve-first local recovery are recorded in `evidence/local-closeout-2026-09-21.md`; provider confirmation, lifecycle harness, security-enforcement, and external-release portions remain)
 - [ ] T149 Complete source, image, runtime, HACS, Hassfest, mirror, GHCR, and live-canary release gates from specs/001-ha-switchboard-completeness/contracts/release-validation.md (local source/image/runtime/package/workflow gates pass; Hassfest passes on the pinned local export; the fail-closed GHCR provenance verifier is hardened and tested; the mirror workflow now gates App E2E and exact source/tag/commit-marker agreement before publication; external credentials, matching published-artifact provenance, HACS, mirror, multi-architecture, and installed-canary evidence remain)
 - [x] T150 Review all external HACS/App repository/provider dependencies and record pending acceptance separately in docs/RELEASE.md (external acceptance remains a release gate)
 - [ ] T151 Publish the feature-complete release only after protected-master ancestry, public mirror, tag, image digest, architecture, and live App/Core evidence agree in .forgejo/workflows/mirror-public.yml (not yet authorized by evidence because T149 external gates remain open)
@@ -367,7 +367,7 @@ all user stories are implemented.
 - [x] T152 [US2] Add the Core native Assist/Conversation fast path for supported routine intents before Jev/fallback routing, with recursion exclusion and focused source tests in custom_components/ha_switchboard/native_path.py, custom_components/ha_switchboard/conversation.py, tests/test_native_conversation_gate.py, and tests/test_conversation_core_contract.py
 - [x] T153 [US2] Verify native intent delegation, no provider call on native success, native misses continuing to Switchboard, and Assist-pipeline behavior inside the Home Assistant 2026.9 devcontainer with the real runtime dependency
 
-## Current validation snapshot (2026-09-20)
+## Historical validation snapshot (through 2026-09-20)
 
 - Ledger state: **148 of 153 tasks checked; 5 remain open**. The checked
   tasks represent implemented source/artifacts with focused evidence; they do
@@ -478,19 +478,22 @@ all user stories are implemented.
 
 ## Current validation snapshot (2026-09-21)
 
-- Reviewed source revision: `2c2424b44e5a28f6d8f4b18368f71987002d2fa8`.
+- Reviewed source candidate: coordinated v0.2.1 metadata across the App,
+  gateway, Core integration, packaging, and documentation authorities.
 - Full source validation passes: **498 passed, 4 expected skips**. The focused
   provider/release/preflight regression slice passes **48 tests**.
-- `check_release_boundary.py --quality`, the release boundary check, the
+- `check_release_boundary.py --versions`, `check_release_boundary.py
+  --quality`, the release boundary check, the
   coordinated source-version check, compilation, shell syntax, and whitespace
   checks all pass.
 - The latest hardening wave adds fail-closed HTTP fallback endpoint/body/
   response validation, malformed typed-proposal handling, coordinated release
   version enforcement, exact GHCR index/child/config media-type and digest
   checks, and a read-only live-gate preflight for T059/T084/T148.
-- T059, T084, T148, T149, and T151 remain unchecked. This snapshot does not
-  authorize a restart, second-user live probe, provider request, public push,
-  tag, image publication, HACS submission, or release claim.
+- T059, T084, T148, T149, and T151 remain unchecked. The bounded local
+  closeout is recorded in `evidence/local-closeout-2026-09-21.md`; this
+  snapshot does not claim a public release, tag, image publication, HACS
+  submission, protected-master landing, or installed canary.
 
 ## Dependencies and Execution Order
 

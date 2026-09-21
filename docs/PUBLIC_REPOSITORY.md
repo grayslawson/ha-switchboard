@@ -32,7 +32,7 @@ rebuild the image or run release automation. A source mirror, tag, or local
 manifest is not evidence that the corresponding image or GitHub Release exists;
 verify each artifact separately before announcing a release.
 
-The private source declares version `0.2.0`. Do not describe a source version
+The private source declares version `0.2.1`. Do not describe a source version
 as public without verifying its matching tag, multi-architecture image, and
 GitHub Release.
 
@@ -67,7 +67,7 @@ prove that the exported repository can be installed or updated through HACS.
 
 ## Current source status
 
-This checkout records source metadata for `0.2.0` in the App, gateway package,
+This checkout records source metadata for `0.2.1` in the App, gateway package,
 Core manifest, Docker build metadata, and changelog. It does not record a
 successful public mirror, protected-master ancestry, GitHub tag or Release,
 GHCR digest, public HACS acceptance, or live App/Core canary. A local pinned

@@ -8,20 +8,20 @@ The goal is simple: make everyday home control quick and inexpensive, then hand 
 >
 > The gateway, Supervisor discovery path, Core integration lifecycle, profile model, policy checks, and packaging paths are available in this checkout and locally tested. Read [Current limitations and roadmap](#current-limitations-and-roadmap) before deploying this to a real home.
 
-This checkout declares the coordinated source version `0.2.0`. It is a source
+This checkout declares the coordinated source version `0.2.1`. It is a source
 release candidate, not a published or complete release: the App is still
 marked experimental and the external/runtime gates remain open. A source
 version alone is not proof of publication; check the matching public tag,
 multi-architecture image, and GitHub Release before installing.
 
 Version policy is intentionally strict: the App config/image, Python package,
-Core manifest, and changelog must carry the same semantic version. A `v0.2.0`
+Core manifest, and changelog must carry the same semantic version. A `v0.2.1`
 tag, public mirror, GHCR digest, and GitHub Release must all identify the same
 protected source revision before anyone describes the artifact as public.
 See [docs/RELEASE.md](docs/RELEASE.md) for migration, rollback, provenance,
 canary, and external-dependency evidence requirements.
 
-The local source authorities currently agree on `0.2.0`:
+The local source authorities currently agree on `0.2.1`:
 
 | Artifact | Source authority |
 | --- | --- |
@@ -102,7 +102,7 @@ In this project, Jev is used as a typed decision boundary rather than as a prose
 
 If Jev selects `delegate`, Switchboard chooses an eligible downstream route by policy. A traditional model may return bounded prose or one typed capability proposal. Any proposal re-enters the same freshness, confirmation, allowlist, execution, and verification checks. Handoffs are limited to one level to prevent loops.
 
-### 0.2.0 support boundary
+### 0.2.1 support boundary
 
 This is the implementation boundary in this checkout, not the target state in
 `specs/001-ha-switchboard-completeness/`:
@@ -182,7 +182,7 @@ The App and Core integration are intentionally separate artifacts.
 1. After the App release is published, add
    `https://github.com/grayslawson/ha-switchboard` in **Settings → Apps → App
    store → ⋮ → Repositories**, then install and start **HA Switchboard**. The
-   local `0.2.0` source candidate is not proof that this App repository or its
+   local `0.2.1` source candidate is not proof that this App repository or its
    image is currently installable. For local development, use the disposable
    harness described below instead.
 2. Configure the App as described in [app/DOCS.md](app/DOCS.md): use `adapter_only`, keep `ingress_only: true`, set a long random `gateway_token`, and start with `local_only` privacy.

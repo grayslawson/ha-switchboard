@@ -24,7 +24,7 @@ bounded request data described by the gateway contract.
 
 ## Current verification status
 
-This checkout is an experimental `0.2.0` source release candidate. Local E2E,
+This checkout is an experimental `0.2.1` source release candidate. Local E2E,
 image, and host-test results cover this checkout and its disposable harness.
 They do not prove a public release, a working HACS install/update path, or a
 live App/Core canary. Keep the App, image, Python package, Core manifest, and
@@ -121,7 +121,7 @@ independent and are not copied into the App.
 
 ## App options: what to enter
 
-This is the safe starting configuration for version `0.2.0`. Check for the
+This is the safe starting configuration for version `0.2.1`. Check for the
 matching public tag and image before installing it from the App store:
 
 | Option | Recommended value | What it means |
@@ -543,7 +543,7 @@ a `decision` event and its bounded
 `jev_invalid_response` means the reply did not meet the adapter contract.
 The log omits utterances, credentials, request bodies, and query strings.
 
-For the complete 0.2.0 support boundary—including supported domains,
+For the complete 0.2.1 support boundary—including supported domains,
 parameter limitations, batch restrictions, and Core-local follow-up context—see the support matrix in the repository [README](../README.md)
 and the generated-spec evidence in
 `specs/001-ha-switchboard-completeness/traceability.md`.

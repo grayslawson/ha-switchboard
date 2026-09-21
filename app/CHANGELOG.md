@@ -5,6 +5,16 @@ All notable App changes will be recorded here.
 Release availability is determined by the matching source tag, App image,
 and public GitHub release, not by this changelog alone.
 
+## 0.2.1 — source release candidate (not published)
+
+- Coordinates the App, Core integration, Python package, and image metadata for
+  the next release candidate after the provider-boundary, release-provenance,
+  and preserve-first local-runtime hardening pass.
+- Records that the local HA 2026.9 validation environment survives the
+  approved App/Core restart sequence without losing its fixtures, config entry,
+  gateway token presence, or active profile. Public image, mirror, HACS, and
+  installed-canary evidence remains an external release gate.
+
 ## 0.2.0 — source release candidate (not published)
 
 - Adds the Core Conversation agent, automatic and manual capability scans,
@@ -33,8 +43,8 @@ and public GitHub release, not by this changelog alone.
 The coordinated source authorities are `app/config.yaml` and `app/Dockerfile`
 for the App/image, `app/ha_switchboard/__init__.py` and `pyproject.toml` for
 the gateway package, and `custom_components/ha_switchboard/manifest.json` for
-Core. All currently read `0.2.0`; this does not establish the version of an
-installed or published artifact.
+Core. At the time of the historical 0.2.0 entry, these authorities all read
+`0.2.0`; the current candidate is recorded at the top of this changelog.
 
 ## 0.1.3 - 2026-09-19
 

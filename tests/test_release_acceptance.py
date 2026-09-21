@@ -81,10 +81,10 @@ def test_source_release_metadata_is_consistent_without_claiming_publication() ->
         )
     )
     project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert 'version: "0.2.0"' in app_config
-    assert manifest["version"] == "0.2.0"
-    assert 'version = "0.2.0"' in project
-    assert "## 0.2.0" in (ROOT / "app" / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert 'version: "0.2.1"' in app_config
+    assert manifest["version"] == "0.2.1"
+    assert 'version = "0.2.1"' in project
+    assert "## 0.2.1" in (ROOT / "app" / "CHANGELOG.md").read_text(encoding="utf-8")
     release = (ROOT / "docs" / "RELEASE.md").read_text(encoding="utf-8")
     assert "public-release evidence" in release
     assert "rollback" in release.lower()

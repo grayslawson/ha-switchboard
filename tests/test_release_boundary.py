@@ -45,7 +45,7 @@ def test_source_version_check_rejects_divergent_or_missing_markers(tmp_path: Pat
     project = tmp_path / "pyproject.toml"
     project.write_text(
         project.read_text(encoding="utf-8").replace(
-            'version = "0.2.0"', 'version = "0.2.1"'
+            'version = "0.2.1"', 'version = "0.2.2"'
         ),
         encoding="utf-8",
     )
@@ -62,7 +62,7 @@ def test_source_version_check_rejects_divergent_or_missing_markers(tmp_path: Pat
     changelog = tmp_path / "app/CHANGELOG.md"
     changelog.write_text(
         changelog.read_text(encoding="utf-8").replace(
-            "## 0.2.0 — source release candidate (not published)",
+            "## 0.2.1 — source release candidate (not published)",
             "## 0.1.0 — source release candidate (not published)",
         ),
         encoding="utf-8",

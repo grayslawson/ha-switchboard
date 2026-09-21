@@ -57,7 +57,7 @@ revision before creating its public tag and Release. Existing public release
 tags are not force-moved on reruns. These are release gates, not a substitute
 for a live Home Assistant canary.
 
-The coordinated source version in this checkout is `0.2.0`. It is a source
+The coordinated source version in this checkout is `0.2.1`. It is a source
 release candidate, not a published or complete release. The App remains
 marked `experimental`, and the limitations below are part of the contract.
 A local version is not public-release evidence. Verify the matching tag,
@@ -162,7 +162,7 @@ they do not establish a public release, an App repository review, or a live
 Home Assistant canary. Record those states separately before claiming release
 readiness.
 
-For this 0.2.0 checkout, the documented supported boundary is the bounded
+For this 0.2.1 checkout, the documented supported boundary is the bounded
 Conversation/profile/provider behavior in the root README. Complete live
 follow-up acceptance, native OpenRouter parameter extraction, executable
 script/scene activation, full Home Assistant surface coverage, and HACS/App
@@ -258,5 +258,5 @@ source tests:
 The remaining release gates are intentionally explicit: T148 (complete
 quickstart evidence), T149 (all source/image/runtime/HACS/Hassfest/mirror/GHCR
 and canary gates), and T151 (protected-master publication only after those
-artifacts agree). This checkout does not publish, tag, push, or call `0.2.0`
+artifacts agree). This checkout does not publish, tag, push, or call `0.2.1`
 complete.
