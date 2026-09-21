@@ -10,6 +10,7 @@ import socket
 import urllib.error
 import urllib.request
 from typing import Any, Mapping, Protocol
+from urllib.parse import urlsplit
 
 from .protocol import HandoffRequest, HandoffResponse, ModelRoute, ResponseKind
 from .redaction import (
@@ -22,6 +23,9 @@ from .route_policy import RouteRegistry, ordered_routes
 
 
 _LOG = logging.getLogger("ha_switchboard.handoff")
+MAX_HTTP_ROUTE_REQUEST_BYTES = 32_000
+MAX_HTTP_ROUTE_RESPONSE_BYTES = 32_000
+MAX_HTTP_ROUTE_ENDPOINT = 2_048
 
 
 class HandoffError(RuntimeError):
@@ -60,6 +64,23 @@ class HttpRouteAdapter:
         endpoint = self.endpoints.get(route.route_id, "")
         if not endpoint:
             raise HandoffError(f"route {route.route_id} has no endpoint")
+        if not isinstance(endpoint, str) or len(endpoint) > MAX_HTTP_ROUTE_ENDPOINT:
+            raise HandoffError("provider endpoint is invalid")
+        try:
+            parsed_endpoint = urlsplit(endpoint.strip())
+            endpoint_scheme = parsed_endpoint.scheme.lower()
+            endpoint_host = parsed_endpoint.hostname
+        except ValueError:
+            raise HandoffError("provider endpoint is invalid") from None
+        if (
+            endpoint_scheme not in {"http", "https"}
+            or not endpoint_host
+            or parsed_endpoint.username
+            or parsed_endpoint.password
+            or parsed_endpoint.query
+            or parsed_endpoint.fragment
+        ):
+            raise HandoffError("provider endpoint is invalid")
         key = (self.api_keys or {}).get(route.route_id) or (
             os.environ.get(env_name) if (env_name := (self.api_key_env or {}).get(route.route_id)) else ""
         )
@@ -87,21 +108,30 @@ class HttpRouteAdapter:
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         if key:
             headers["Authorization"] = f"Bearer {key}"
+        body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        if len(body) > MAX_HTTP_ROUTE_REQUEST_BYTES:
+            raise HandoffError("provider request is too large")
         request_obj = urllib.request.Request(
-            endpoint.rstrip("/"),
-            data=json.dumps(payload, separators=(",", ":")).encode("utf-8"),
+            endpoint.strip().rstrip("/"),
+            data=body,
             headers=headers,
             method="POST",
         )
         try:
             with open_provider_url(request_obj, timeout=max(0.2, min(self.timeout, 15))) as response:
-                decoded = json.loads(response.read(128_000))
+                raw = response.read(MAX_HTTP_ROUTE_RESPONSE_BYTES + 1)
+                if len(raw) > MAX_HTTP_ROUTE_RESPONSE_BYTES:
+                    raise HandoffInvalidResponse("provider response is too large")
+                decoded = json.loads(raw)
         except urllib.error.HTTPError as exc:
             _LOG.warning("event=provider_http_error provider=route status=%d", exc.code)
             raise HandoffError("provider request failed") from exc
         except (urllib.error.URLError, TimeoutError, socket.timeout, OSError) as exc:
             _LOG.warning("event=provider_transport_error provider=route error_type=%s", type(exc).__name__)
             raise HandoffError("provider request failed") from exc
+        except (TypeError, ValueError) as exc:
+            _LOG.warning("event=provider_invalid_response provider=route reason=malformed")
+            raise HandoffInvalidResponse("provider returned malformed JSON") from exc
         if not isinstance(decoded, Mapping):
             _LOG.warning("event=provider_invalid_response provider=route reason=not_object")
             raise HandoffError("provider returned an invalid object")
@@ -165,8 +195,9 @@ def validate_response(
         raise HandoffInvalidResponse("typed parameter names are invalid")
     if any(not isinstance(value, (str, int, float, bool)) and value is not None for value in parameters.values()):
         raise HandoffInvalidResponse("typed parameter values are invalid")
+    relevant_facts = request.relevant_facts if isinstance(request.relevant_facts, (list, tuple)) else ()
     candidate = next(
-        (item for item in request.relevant_facts if item.get("capability_id") == proposal["capability_id"]),
+        (item for item in relevant_facts if isinstance(item, Mapping) and item.get("capability_id") == proposal["capability_id"]),
         None,
     )
     if candidate is not None:

@@ -41,7 +41,7 @@ def _registry_with_labels(
     def fake_json(path: str, _accept: str):
         if path.endswith("/manifests/0.1.3"):
             return (
-                {"manifests": [
+                {"mediaType": "application/vnd.oci.image.index.v1+json", "manifests": [
                     {
                         "platform": {"os": "linux", "architecture": arch},
                         "digest": PLATFORM_DIGESTS[arch],
@@ -53,7 +53,13 @@ def _registry_with_labels(
         for arch in ("amd64", "arm64"):
             if path.endswith(f"/manifests/{PLATFORM_DIGESTS[arch]}"):
                 response_digest = PLATFORM_DIGESTS[arch] if child_digest is ... else child_digest
-                return {"config": {"digest": CONFIG_DIGESTS[arch]}}, response_digest
+                return {
+                    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                    "config": {
+                        "mediaType": "application/vnd.oci.image.config.v1+json",
+                        "digest": CONFIG_DIGESTS[arch],
+                    },
+                }, response_digest
             if path.endswith(f"/blobs/{CONFIG_DIGESTS[arch]}"):
                 if config_metadata is not None:
                     response_digest = CONFIG_DIGESTS[arch] if config_response_digest is ... else config_response_digest
@@ -153,9 +159,14 @@ def _provenance_record() -> dict:
         "image": {
             "tag": "0.2.0",
             "digest": IMAGE_DIGEST,
+            "media_type": "application/vnd.oci.image.index.v1+json",
             "platforms": {
                 arch: {
+                    "os": "linux",
+                    "descriptor_media_type": "application/vnd.oci.image.manifest.v1+json",
                     "digest": PLATFORM_DIGESTS[arch],
+                    "config_media_type": "application/vnd.oci.image.config.v1+json",
+                    "config_digest": CONFIG_DIGESTS[arch],
                     "source": SOURCE_URL,
                     "revision": revision,
                 }
@@ -232,3 +243,52 @@ def test_offline_provenance_file_requires_public_release_metadata() -> None:
     del record["public_release"]
     with pytest.raises(ValueError, match="public release metadata is required"):
         MODULE.verify_provenance_record(record)
+
+
+def test_offline_provenance_file_requires_release_architecture_pair() -> None:
+    record = _provenance_record()
+    record["expected_architectures"] = ["amd64"]
+    with pytest.raises(ValueError, match="linux/amd64 and linux/arm64"):
+        MODULE.verify_provenance_record(record)
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "message"),
+    [
+        ("platforms", "os", "descriptor is not a Linux image"),
+        ("image", "media_type", "published image media type"),
+        ("platforms", "descriptor_media_type", "descriptor media type"),
+        ("platforms", "config_media_type", "config media type"),
+        ("platforms", "config_digest", "config digest"),
+    ],
+)
+def test_offline_provenance_file_requires_descriptor_and_config_identity(
+    path: str, value: str, message: str
+) -> None:
+    record = _provenance_record()
+    if path == "image":
+        del record["image"][value]
+    else:
+        del record["image"]["platforms"]["amd64"][value]
+    with pytest.raises(ValueError, match=message):
+        MODULE.verify_provenance_record(record)
+
+
+@pytest.mark.parametrize("missing_field", ["mediaType", "config_mediaType"])
+def test_registry_gate_requires_manifest_and_config_media_types(missing_field: str) -> None:
+    registry = _registry_with_labels("forgejo-commit-1")
+    original_json = registry.json
+
+    def missing_media_type(path: str, accept: str):
+        payload, digest = original_json(path, accept)
+        if path.endswith(f"/manifests/{PLATFORM_DIGESTS['arm64']}"):
+            if missing_field == "mediaType":
+                del payload["mediaType"]
+            else:
+                del payload["config"]["mediaType"]
+        return payload, digest
+
+    registry.json = missing_media_type
+    expected = "manifest media type" if missing_field == "mediaType" else "config media type"
+    with pytest.raises(ValueError, match=expected):
+        registry.verify("0.1.3", {"amd64", "arm64"}, SOURCE_URL, "forgejo-commit-1")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -21,6 +22,65 @@ else:
 
 def test_product_release_boundary_is_clean() -> None:
     assert check_release_boundary.violations(Path(__file__).parents[1]) == []
+
+
+def test_product_source_versions_are_consistent() -> None:
+    assert check_release_boundary.source_version_violations(Path(__file__).parents[1]) == []
+
+
+def test_source_version_check_rejects_divergent_or_missing_markers(tmp_path: Path) -> None:
+    root = Path(__file__).parents[1]
+    for relative in (
+        "app/config.yaml",
+        "app/Dockerfile",
+        "app/ha_switchboard/__init__.py",
+        "app/CHANGELOG.md",
+        "custom_components/ha_switchboard/manifest.json",
+        "pyproject.toml",
+    ):
+        destination = tmp_path / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(root / relative, destination)
+
+    project = tmp_path / "pyproject.toml"
+    project.write_text(
+        project.read_text(encoding="utf-8").replace(
+            'version = "0.2.0"', 'version = "0.2.1"'
+        ),
+        encoding="utf-8",
+    )
+    dockerfile = tmp_path / "app/Dockerfile"
+    dockerfile.write_text(
+        dockerfile.read_text(encoding="utf-8")
+        .replace("ARG BUILD_REVISION=local", "ARG BUILD_REVISION")
+        .replace(
+            'org.opencontainers.image.revision="${BUILD_REVISION}"',
+            'org.opencontainers.image.revision="local"',
+        ),
+        encoding="utf-8",
+    )
+    changelog = tmp_path / "app/CHANGELOG.md"
+    changelog.write_text(
+        changelog.read_text(encoding="utf-8").replace(
+            "## 0.2.0 — source release candidate (not published)",
+            "## 0.1.0 — source release candidate (not published)",
+        ),
+        encoding="utf-8",
+    )
+
+    findings = check_release_boundary.source_version_violations(tmp_path)
+    assert any("release source version mismatch" in finding for finding in findings)
+    assert any("missing BUILD_REVISION build marker" in finding for finding in findings)
+    assert any("revision label is not wired" in finding for finding in findings)
+    assert any("app/CHANGELOG.md is missing release marker" in finding for finding in findings)
+
+
+def test_source_version_check_fails_closed_on_malformed_metadata(tmp_path: Path) -> None:
+    (tmp_path / "app").mkdir(parents=True)
+    (tmp_path / "app/config.yaml").write_text("name: HA Switchboard\n", encoding="utf-8")
+    findings = check_release_boundary.source_version_violations(tmp_path)
+    assert "app/config.yaml: missing version marker" in findings
+    assert any("missing release source file" in finding for finding in findings)
 
 
 def test_boundary_rejects_private_runtime_reference(tmp_path: Path) -> None:

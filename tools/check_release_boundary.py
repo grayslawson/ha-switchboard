@@ -6,7 +6,9 @@ from __future__ import annotations
 import argparse
 import ast
 import ipaddress
+import json
 import re
+import tomllib
 from pathlib import Path
 
 
@@ -85,6 +87,122 @@ _SECRET_LOG = re.compile(
     re.IGNORECASE,
 )
 _DOC_LINK = re.compile(r"\[[^\]]+\]\(([^)#]+)(?:#[^)]+)?\)")
+_SEMVER = re.compile(r"\d+\.\d+\.\d+\Z")
+
+
+def _version_marker(text: str, pattern: str, label: str) -> tuple[str | None, str | None]:
+    match = re.search(pattern, text, re.MULTILINE)
+    if match is None:
+        return None, f"{label}: missing version marker"
+    return match.group(1), None
+
+
+def source_version_violations(root: Path = PRODUCT_ROOT) -> list[str]:
+    """Return fail-closed findings for coordinated release source metadata."""
+
+    root = root.resolve()
+    findings: list[str] = []
+    paths = {
+        "app/config.yaml": root / "app/config.yaml",
+        "app/Dockerfile": root / "app/Dockerfile",
+        "app/ha_switchboard/__init__.py": root / "app/ha_switchboard/__init__.py",
+        "app/CHANGELOG.md": root / "app/CHANGELOG.md",
+        "custom_components/ha_switchboard/manifest.json": (
+            root / "custom_components/ha_switchboard/manifest.json"
+        ),
+        "pyproject.toml": root / "pyproject.toml",
+    }
+    contents: dict[str, str] = {}
+    for label, path in paths.items():
+        if not path.is_file():
+            findings.append(f"{label}: missing release source file")
+            continue
+        try:
+            contents[label] = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            findings.append(f"{label}: unreadable release source file")
+
+    versions: dict[str, str] = {}
+    config = contents.get("app/config.yaml")
+    if config is not None:
+        value, error = _version_marker(
+            config, r"^version:\s*[\"']?([^\"'\s]+)", "app/config.yaml"
+        )
+        if error:
+            findings.append(error)
+        elif value is not None:
+            versions["app/config.yaml"] = value
+    package = contents.get("app/ha_switchboard/__init__.py")
+    if package is not None:
+        value, error = _version_marker(
+            package,
+            r"^__version__\s*=\s*[\"']([^\"']+)[\"']",
+            "app/ha_switchboard/__init__.py",
+        )
+        if error:
+            findings.append(error)
+        elif value is not None:
+            versions["app/ha_switchboard/__init__.py"] = value
+    dockerfile = contents.get("app/Dockerfile")
+    if dockerfile is not None:
+        value, error = _version_marker(
+            dockerfile, r"^ARG BUILD_VERSION=([^\s]+)", "app/Dockerfile"
+        )
+        if error:
+            findings.append(error)
+        elif value is not None:
+            versions["app/Dockerfile"] = value
+        if not re.search(r"^ARG BUILD_REVISION=([^\s]+)", dockerfile, re.MULTILINE):
+            findings.append("app/Dockerfile: missing BUILD_REVISION build marker")
+        if 'org.opencontainers.image.revision="${BUILD_REVISION}"' not in dockerfile:
+            findings.append("app/Dockerfile: revision label is not wired to BUILD_REVISION")
+    manifest_text = contents.get("custom_components/ha_switchboard/manifest.json")
+    if manifest_text is not None:
+        try:
+            manifest = json.loads(manifest_text)
+        except json.JSONDecodeError:
+            findings.append("custom_components/ha_switchboard/manifest.json: invalid JSON")
+        else:
+            value = manifest.get("version") if isinstance(manifest, dict) else None
+            if not isinstance(value, str) or not value:
+                findings.append(
+                    "custom_components/ha_switchboard/manifest.json: missing version marker"
+                )
+            else:
+                versions["custom_components/ha_switchboard/manifest.json"] = value
+    project_text = contents.get("pyproject.toml")
+    if project_text is not None:
+        try:
+            project = tomllib.loads(project_text)
+        except tomllib.TOMLDecodeError:
+            findings.append("pyproject.toml: invalid TOML")
+        else:
+            project_metadata = project.get("project")
+            value = (
+                project_metadata.get("version")
+                if isinstance(project_metadata, dict)
+                else None
+            )
+            if not isinstance(value, str) or not value:
+                findings.append("pyproject.toml: missing project.version marker")
+            else:
+                versions["pyproject.toml"] = value
+
+    if versions and len(set(versions.values())) != 1:
+        findings.append(
+            "release source version mismatch: "
+            + ", ".join(f"{label}={value}" for label, value in sorted(versions.items()))
+        )
+    if versions:
+        version = next(iter(versions.values()))
+        if not _SEMVER.fullmatch(version):
+            findings.append(f"release source version is not semantic X.Y.Z: {version}")
+        changelog = contents.get("app/CHANGELOG.md")
+        if changelog is not None:
+            marker = f"## {version} — source release candidate (not published)"
+            if marker not in changelog:
+                findings.append(f"app/CHANGELOG.md is missing release marker: {marker}")
+    return sorted(set(findings))
 
 
 def _bounded_tool_violations(root: Path) -> list[str]:
@@ -294,13 +412,37 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=PRODUCT_ROOT)
     parser.add_argument("--quality", action="store_true", help="run the static quality audit")
+    parser.add_argument(
+        "--versions", action="store_true", help="check coordinated release source versions"
+    )
     args = parser.parse_args()
-    findings = quality_violations(args.root.resolve()) if args.quality else violations(args.root.resolve())
+    if args.quality and args.versions:
+        parser.error("--quality and --versions are mutually exclusive")
+    if args.versions:
+        findings = source_version_violations(args.root.resolve())
+    elif args.quality:
+        findings = quality_violations(args.root.resolve())
+    else:
+        findings = violations(args.root.resolve())
     if findings:
-        print("quality audit: FAIL" if args.quality else "release boundary: FAIL")
+        label = (
+            "source versions"
+            if args.versions
+            else "quality audit"
+            if args.quality
+            else "release boundary"
+        )
+        print(f"{label}: FAIL")
         print("\n".join(f"- {finding}" for finding in findings))
         return 1
-    print("quality audit: PASS" if args.quality else "release boundary: PASS")
+    label = (
+        "source versions"
+        if args.versions
+        else "quality audit"
+        if args.quality
+        else "release boundary"
+    )
+    print(f"{label}: PASS")
     return 0
 
 

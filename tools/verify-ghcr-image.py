@@ -20,6 +20,25 @@ MANIFEST_ACCEPT = (
     "application/vnd.oci.image.manifest.v1+json,"
     "application/vnd.docker.distribution.manifest.v2+json"
 )
+INDEX_MEDIA_TYPES = frozenset(
+    {
+        "application/vnd.oci.image.index.v1+json",
+        "application/vnd.docker.distribution.manifest.list.v2+json",
+    }
+)
+IMAGE_MANIFEST_MEDIA_TYPES = frozenset(
+    {
+        "application/vnd.oci.image.manifest.v1+json",
+        "application/vnd.docker.distribution.manifest.v2+json",
+    }
+)
+CONFIG_MEDIA_TYPES = frozenset(
+    {
+        "application/vnd.oci.image.config.v1+json",
+        "application/vnd.docker.container.image.v1+json",
+    }
+)
+RELEASE_ARCHITECTURES = frozenset({"amd64", "arm64"})
 SHA256_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
@@ -34,6 +53,13 @@ def _required_digest(value: Any, field: str) -> str:
     if not SHA256_DIGEST.fullmatch(digest):
         raise ValueError(f"{field} must be an immutable sha256 digest")
     return digest
+
+
+def _required_media_type(value: Any, allowed: frozenset[str], field: str) -> str:
+    media_type = _required_text(value, field)
+    if media_type not in allowed:
+        raise ValueError(f"{field} is not a supported OCI media type")
+    return media_type
 
 
 def _required_architectures(value: Any, field: str = "architecture set") -> set[str]:
@@ -79,7 +105,20 @@ def _verify_image_facts(
         details = platforms.get(architecture)
         if not isinstance(details, dict):
             raise ValueError(f"linux/{architecture} image metadata is invalid")
+        if details.get("os") != "linux":
+            raise ValueError(f"linux/{architecture} descriptor is not a Linux image")
+        _required_media_type(
+            details.get("descriptor_media_type"),
+            IMAGE_MANIFEST_MEDIA_TYPES,
+            f"linux/{architecture} descriptor media type",
+        )
         _required_digest(details.get("digest"), f"linux/{architecture} manifest digest")
+        _required_media_type(
+            details.get("config_media_type"),
+            CONFIG_MEDIA_TYPES,
+            f"linux/{architecture} config media type",
+        )
+        _required_digest(details.get("config_digest"), f"linux/{architecture} config digest")
         if details.get("source") != source_url:
             raise ValueError(f"linux/{architecture} image has an unexpected source label")
         if details.get("revision") != revision:
@@ -134,6 +173,8 @@ def verify_provenance_record(record: Any) -> tuple[str, set[str]]:
     )
     source_url = _required_text(record.get("source_url"), "candidate source URL")
     expected_architectures = _required_architectures(record.get("expected_architectures"))
+    if expected_architectures != RELEASE_ARCHITECTURES:
+        raise ValueError("offline release must declare linux/amd64 and linux/arm64")
     image = record.get("image")
     if not isinstance(image, dict):
         raise ValueError("image metadata is required")
@@ -141,6 +182,9 @@ def verify_provenance_record(record: Any) -> tuple[str, set[str]]:
         raise ValueError("public release metadata is required")
     image_tag = _required_text(image.get("tag"), "image tag")
     image_digest = _required_digest(image.get("digest"), "published image digest")
+    _required_media_type(
+        image.get("media_type"), INDEX_MEDIA_TYPES, "published image media type"
+    )
     raw_platforms = image.get("platforms")
     if not isinstance(raw_platforms, dict):
         raise ValueError("image platform metadata is required")
@@ -212,6 +256,9 @@ class Registry:
         index, index_digest = self.json(
             f"{prefix}/manifests/{urllib.parse.quote(tag, safe='')}", MANIFEST_ACCEPT
         )
+        _required_media_type(
+            index.get("mediaType"), INDEX_MEDIA_TYPES, "published image media type"
+        )
         manifests = index.get("manifests")
         if not isinstance(manifests, list):
             raise ValueError("published image is not a multi-architecture manifest")
@@ -235,11 +282,23 @@ class Registry:
             )
             if child_digest != manifest_digest:
                 raise ValueError(f"linux/{architecture} manifest digest does not match descriptor")
+            descriptor_media_type = child.get("mediaType")
+            _required_media_type(
+                descriptor_media_type,
+                IMAGE_MANIFEST_MEDIA_TYPES,
+                f"linux/{architecture} manifest media type",
+            )
             config_descriptor = child.get("config")
             if not isinstance(config_descriptor, dict) or not isinstance(
                 config_descriptor.get("digest"), str
             ):
                 raise ValueError(f"linux/{architecture} manifest has no config")
+            config_media_type = config_descriptor.get("mediaType")
+            _required_media_type(
+                config_media_type,
+                CONFIG_MEDIA_TYPES,
+                f"linux/{architecture} config media type",
+            )
             config_digest = _required_digest(
                 config_descriptor["digest"], f"linux/{architecture} config digest"
             )
@@ -255,7 +314,11 @@ class Registry:
             if not isinstance(labels, dict):
                 raise ValueError(f"linux/{architecture} image has no OCI labels")
             platforms[architecture] = {
+                "os": "linux",
+                "descriptor_media_type": descriptor_media_type,
                 "digest": manifest_digest,
+                "config_media_type": config_media_type,
+                "config_digest": config_digest,
                 "source": labels.get("org.opencontainers.image.source"),
                 "revision": labels.get("org.opencontainers.image.revision"),
             }
