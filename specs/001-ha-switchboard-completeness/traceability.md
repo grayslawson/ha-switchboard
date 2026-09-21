@@ -1,7 +1,7 @@
 # HA Switchboard 0.2.0 requirements traceability
 
-**Review date:** 2026-09-20
-**Reviewed revision:** `e5b20bedd4b06bbb1f70be092030471ceabae3fa` on
+**Review date:** 2026-09-21
+**Reviewed revision:** `2c2424b44e5a28f6d8f4b18368f71987002d2fa8` on
 `codex/fix-apparmor-runtime`
 **Purpose:** distinguish behavior present in source and focused tests from the
 future-completeness target described by `spec.md`, `plan.md`, and the contract
@@ -48,7 +48,7 @@ The current checkout has focused source/test evidence for these safe boundaries:
   `tests/test_server.py::test_supervisor_discovery_retry_is_bounded` cover the
   source-level behavior.
 
-The latest repository test run was `474 passed, 4 skipped`. The skips were
+The latest repository test run was `498 passed, 4 skipped`. The skips were
 the Home Assistant config-flow/runtime tests because the
 `homeassistant` package is not installed in this host worktree; they are not
 source-test proof. A separate read-only check of the preserved local
@@ -63,7 +63,8 @@ HACS/App-catalog, or live-canary evidence was claimed by this pass.
 The public-export finding identified during the audit is fixed at the reviewed
 revision: `tools/standalone-smoke.sh` is explicitly allowlisted and the
 regression test requires it to appear in the export. The full source suite is
-`474 passed, 4 skipped`, and the release-boundary and quality checks pass.
+`498 passed, 4 skipped`, and the release-boundary, source-version, and quality
+checks pass.
 This closes the local exporter defect but does not establish public mirror,
 GHCR, HACS, multi-architecture, or live-canary acceptance.
 

@@ -1,8 +1,8 @@
 # HA Switchboard convergence record
 
-**Review date:** 2026-09-20
+**Review date:** 2026-09-21
 **Worktree:** `ha-switchboard-ci-hardening`
-**Reviewed revision:** `e5b20bedd4b06bbb1f70be092030471ceabae3fa`
+**Reviewed revision:** `2c2424b44e5a28f6d8f4b18368f71987002d2fa8`
 (source revision used for the current local validation)
 **Scope:** This note records the current Spec Kit convergence boundary. The
 primary runtime, test, workflow, fixture, and user-document changes remain
@@ -68,7 +68,7 @@ evidence.
   validation. Standalone Compose has a credential-free bounded configuration
   smoke check, and Core diagnostics expose the last profile reconcile trigger.
 - Supervisor discovery retry is bounded and reuses a sanitized payload.
-- Latest full pytest result at the reviewed revision: `474 passed, 4 skipped`.
+- Latest full pytest result at the reviewed revision: `498 passed, 4 skipped`.
   The skips require the absent Home Assistant runtime/config-flow dependency
   in the host worktree and the two opt-in live fixture probes; they are not
   source or live proof by themselves.
@@ -147,3 +147,15 @@ The known conditional `assist_surfaces` discovery boundary remains accurately
 described in `traceability.md`: the adapter only exports descriptive surfaces
 when the runtime supplies them, and does not claim complete Home Assistant
 Assist-surface discovery.
+
+## Validation refresh — 2026-09-21
+
+The current source revision is `2c2424b44e5a28f6d8f4b18368f71987002d2fa8`.
+The full source suite passes `498 passed, 4 skipped`; the focused
+provider/release/preflight slice passes 48 tests; quality, release-boundary,
+coordinated source-version, compilation, shell-syntax, and whitespace checks
+pass. The latest hardening adds fail-closed fallback endpoint/body/response
+limits, malformed typed-proposal defense, coordinated version checks, exact
+GHCR descriptor/config media-type and digest checks, and a read-only live-gate
+preflight. No new unbuilt requirement was identified beyond the five existing
+unchecked tasks; the current ledger remains 148 complete and 5 open.

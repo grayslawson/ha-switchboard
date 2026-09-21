@@ -8,7 +8,7 @@ configure, or restart the disposable harness. This documentation pass did
 not run those mutating commands, any opt-in restart, token rotation, or
 provider request.
 
-**T148 evidence status (2026-09-20): partial.** This quickstart is not a
+**T148 evidence status (2026-09-21): partial.** This quickstart is not a
 complete live Supervisor/App/Core acceptance run. Its commands and matrix
 define required evidence; they do not claim that every fixture scenario,
 live provider path, or release canary succeeded. A detailed sanitized partial
@@ -18,7 +18,7 @@ release gates. The current source metadata agrees on App/Core version `0.2.0`,
 but that is source evidence, not installed or published-artifact proof.
 
 The current source-level run at `HEAD`
-`e5b20bedd4b06bbb1f70be092030471ceabae3fa` was `474 passed, 4 skipped`.
+`2c2424b44e5a28f6d8f4b18368f71987002d2fa8` was `498 passed, 4 skipped`.
 The tracked credential-free `tools/standalone-smoke.sh` is now included in
 the public export allowlist and the export regression check passes. External
 T149 gates remain open.
@@ -238,13 +238,13 @@ full provider responses in the evidence record.
 ## Observed source evidence for this pass
 
 - Worktree: `codex/fix-apparmor-runtime`, current `HEAD`
-  `e5b20bedd4b06bbb1f70be092030471ceabae3fa`. External publication gates
+  `2c2424b44e5a28f6d8f4b18368f71987002d2fa`. External publication gates
   remain open.
 - Coordinated source version: `0.2.0` in the App config/image metadata, gateway
   package, Core manifest, and changelog.
 - Current local source checks: `python3 -m compileall -q
   app/ha_switchboard custom_components/ha_switchboard tools tests` passed;
-  `python3 -m pytest -q tests` passed (`474 passed, 4 skipped`); and
+  `python3 -m pytest -q tests` passed (`498 passed, 4 skipped`); and
   `python3 tools/check_release_boundary.py --quality` passed. The current
   skips are the unavailable host ConversationEntity/config-flow dependencies
   and two opt-in live fixture probes. `git diff --check` is clean for the

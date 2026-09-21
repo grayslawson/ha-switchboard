@@ -434,7 +434,7 @@ all user stories are implemented.
   path, credentials, query, or fragment), and its regression test is included
   in the current source result. T059 now also supports explicitly supplied
   second-user and natural-TTL opt-ins without changing the safe default or
-  persisting credentials. The current source result is 474 tests with 4
+  persisting credentials. The current source result is 498 tests with 4
   expected skips; the preserve-first/local-acceptance focused suite passes
   32 tests with one opt-in live skip.
 - Latest multi-target/UI hardening: explicit light, switch, and fan on/off
@@ -456,7 +456,7 @@ all user stories are implemented.
   standalone Compose model has a credential-free bounded smoke validator, and
   Core diagnostics expose the last reconcile trigger (`startup`, `manual`,
   `invalidation`, `recovery`, or `periodic`). The current source result is
-  **474 passed, 4 skipped**; these changes do not close the live provider or
+  **498 passed, 4 skipped**; these changes do not close the live provider or
   external-release gates.
 - Latest recovery hardening: the authorized restart path now requires a
   strict boolean opt-in, rejects malformed or unsuccessful non-empty Core
@@ -475,6 +475,22 @@ all user stories are implemented.
   criteria were closed against the current migration behavior, reviewed
   bounds, supported-domain exclusions, and user-facing App configuration
   descriptions.
+
+## Current validation snapshot (2026-09-21)
+
+- Reviewed source revision: `2c2424b44e5a28f6d8f4b18368f71987002d2fa8`.
+- Full source validation passes: **498 passed, 4 expected skips**. The focused
+  provider/release/preflight regression slice passes **48 tests**.
+- `check_release_boundary.py --quality`, the release boundary check, the
+  coordinated source-version check, compilation, shell syntax, and whitespace
+  checks all pass.
+- The latest hardening wave adds fail-closed HTTP fallback endpoint/body/
+  response validation, malformed typed-proposal handling, coordinated release
+  version enforcement, exact GHCR index/child/config media-type and digest
+  checks, and a read-only live-gate preflight for T059/T084/T148.
+- T059, T084, T148, T149, and T151 remain unchecked. This snapshot does not
+  authorize a restart, second-user live probe, provider request, public push,
+  tag, image publication, HACS submission, or release claim.
 
 ## Dependencies and Execution Order
 
