@@ -782,7 +782,10 @@ def restart_cycle(*, allow_restart: bool) -> dict:
     before_options, before_options_private = read_local_app_options()
     if not target_identity_is_verified(target):
         raise RuntimeError("Refusing restart without verified local Supervisor volume identity")
-    if not allow_restart:
+    # Keep the authorization boundary type-strict.  The CLI supplies a real
+    # bool, but this function is also imported by tests and local tooling; a
+    # truthy string or integer must never accidentally authorize restarts.
+    if allow_restart is not True:
         return {
             "command": "restart-cycle",
             "mode": "read_only",
@@ -852,10 +855,20 @@ def restart_cycle(*, allow_restart: bool) -> dict:
             "Local App restart did not preserve config entry and fixture anchors; settled profile missing"
         )
 
-    run_host_command(
+    core_restart_output = run_host_command(
         ["docker", "exec", LOCAL_SUPERVISOR_CONTAINER, "ha", "core", "restart", "--raw-json"],
         timeout=remaining(RESTART_ACTION_TIMEOUT_SECONDS),
     )
+    # Supervisor normally returns JSON for --raw-json.  Keep compatibility
+    # with wrappers that intentionally suppress successful stdout, but reject
+    # any non-empty malformed or unsuccessful response.
+    if core_restart_output.strip():
+        try:
+            core_restart_result = json.loads(core_restart_output)
+        except json.JSONDecodeError:
+            raise RuntimeError("Local Core restart returned invalid bounded evidence") from None
+        if not isinstance(core_restart_result, dict) or core_restart_result.get("result") != "ok":
+            raise RuntimeError("Local Core restart did not report success")
     wait_for_local_component("core", timeout=remaining(RESTART_WAIT_SECONDS))
     after_target = inspect_local_supervisor()
     if not target_identity_is_verified(after_target) or safe_target_evidence(after_target) != safe_target_evidence(target):

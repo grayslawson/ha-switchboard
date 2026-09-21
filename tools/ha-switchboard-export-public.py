@@ -37,6 +37,7 @@ ALLOWED_FILES = frozenset(
         "tools/ha-switchboard-scan.py",
         "tools/ha-switchboard-export-public.py",
         "tools/app-image-smoke.sh",
+        "tools/standalone-smoke.sh",
         "tools/verify-ghcr-image.py",
     }
 )

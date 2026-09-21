@@ -100,6 +100,7 @@ def test_public_export_omits_tests_for_private_release_and_runtime_harnesses(
 
     destination = tmp_path / "public"
     assert ha_switchboard_export_public.export(Path(__file__).parents[1], destination) == []
+    assert (destination / "tools/standalone-smoke.sh").is_file()
     for relative in (
         "tests/test_app_image_e2e.py",
         "tests/test_app_security.py",

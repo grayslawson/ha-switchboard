@@ -186,6 +186,56 @@ def test_local_startup_requires_existing_gateway_token_and_fixture_identity(monk
         api.startup_check()
 
 
+def test_t084_restart_authorization_is_type_strict_and_core_result_is_bounded(monkeypatch) -> None:
+    api = _fixture_api()
+    lifecycle = {
+        "config_entry": {"domain": "ha_switchboard", "source": "hassio", "version": 1, "has_gateway_token": True},
+        "core": {
+            "fixture_entity_count": 28,
+            "conversation_agent_present": True,
+            "fixture_identity_fingerprint": "0123456789abcdef",
+        },
+        "gateway": {
+            "status": "active",
+            "has_revision": True,
+            "pending_section_count": 0,
+            "pending_invalidation_count": 0,
+        },
+    }
+    options = {
+        "options_present": True,
+        "app_started": True,
+        "configured_fields": {"gateway_token": True},
+    }
+    target = {
+        "container": "busy_cohen",
+        "supervisor_port": 7123,
+        "supervisor_volume_verified": True,
+        "volume_identity_verified": True,
+        "volume_identity_fingerprint": "0123456789abcdef",
+    }
+    commands: list[list[str]] = []
+    monkeypatch.setattr(api, "inspect_local_supervisor", lambda: target)
+    monkeypatch.setattr(api, "run_core_fixture_command", lambda command: lifecycle)
+    monkeypatch.setattr(api, "read_local_app_options", lambda: (options, {"gateway_token": "memory-only"}))
+    monkeypatch.setattr(api, "wait_for_local_component", lambda *args, **kwargs: None)
+
+    # A non-bool authorization value must remain a no-op and issue no command.
+    read_only = api.restart_cycle(allow_restart="yes")
+    assert read_only["restart_performed"] is False
+
+    def fake_host_command(args, **kwargs):
+        commands.append(args)
+        return "" if len(commands) == 1 else '{"result":"error"}'
+
+    monkeypatch.setattr(api, "run_host_command", fake_host_command)
+    with pytest.raises(RuntimeError, match="Core restart did not report success"):
+        api.restart_cycle(allow_restart=True)
+    assert len(commands) == 2
+    assert commands[0][-2:] == ["restart", api.LOCAL_APP_SLUG]
+    assert commands[1][-3:] == ["core", "restart", "--raw-json"]
+
+
 def test_runtime_operation_matrix_covers_every_published_fixture_row(tmp_path) -> None:
     api = _fixture_api()
     plan = api.operation_matrix_plan()
