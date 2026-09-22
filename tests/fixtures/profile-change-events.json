@@ -1,0 +1,7 @@
+[
+  {"event_type": "entity_registry_updated", "data": {"action": "update"}},
+  {"event_type": "area_registry_updated", "data": {"action": "update"}},
+  {"event_type": "exposure_updated", "data": {"action": "update"}},
+  {"event_type": "service_schema_updated", "data": {"action": "update"}},
+  {"event_type": "restart"}
+]
