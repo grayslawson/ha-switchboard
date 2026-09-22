@@ -4,18 +4,11 @@ name: Validate HACS integration
 # deliberately not wired to pull_request, so fork and ordinary PR jobs never
 # receive GH_MIRROR_TOKEN.
 on:
-  push:
-    branches:
-      - master
-    tags:
-      - "v*"
-    paths:
-      - "custom_components/**"
-      - "hacs.json"
-      - "repository.yaml"
-      - "README.md"
-      - "docs/**"
-      - ".forgejo/workflows/**"
+  # This workflow validates the public GitHub mirror. A Forgejo push cannot
+  # trigger it safely because the mirror workflow runs concurrently and the
+  # public raw-content endpoint may still serve the previous revision. The
+  # mirror job performs the authoritative post-push validation; this remains
+  # available for an explicit operator rerun.
   workflow_dispatch:
 
 concurrency:

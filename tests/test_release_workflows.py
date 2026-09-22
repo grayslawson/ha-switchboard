@@ -77,6 +77,8 @@ def test_ci_and_metadata_workflows_validate_the_public_export() -> None:
         assert 'test ! -e "$RUNNER_TEMP/public/.forgejo"' in text
     assert validation.index("Export and validate public tree") < validation.index("hassfest@sha256")
     assert hacs.index("Export and validate public tree") < hacs.index("hacs/action@sha256")
+    assert "workflow_dispatch:" in hacs
+    assert "branches:" not in hacs.split("jobs:", 1)[0]
 
 
 def test_release_publication_requires_static_and_external_metadata_evidence() -> None:
@@ -93,6 +95,7 @@ def test_release_publication_requires_static_and_external_metadata_evidence() ->
     assert 'asset_name = "ha_switchboard.zip"' in mirror
     assert "upload_url" in mirror
     assert "GitHub release asset verified" in mirror
+    assert "public mirror HACS validation did not converge within 120 seconds" in mirror
     assert "sleep 10" in mirror
     assert "for attempt in {1..12}" in mirror
     assert "within 120 seconds" in mirror

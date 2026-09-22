@@ -225,14 +225,27 @@ jobs:
           if [ "${FORGEJO_REF_TYPE:-${GITHUB_REF_TYPE:-branch}}" != tag ]; then
             ref_name=master
           fi
-          podman run --rm \
-            --env INPUT_GITHUB_TOKEN \
-            --env REPOSITORY=grayslawson/ha-switchboard \
-            --env CATEGORY=integration \
-            --env REPOSITORY_REF="$ref_name" \
-            --env GITHUB_WORKSPACE=/github/workspace \
-            --volume "$RUNNER_TEMP/public:/github/workspace:ro" \
-            ghcr.io/hacs/action@sha256:dc92fdad2f6ffbe74bffb7269d781ea8e064f52d9bb486cdf3925d74e7ab6ebf
+          hacs_log="$RUNNER_TEMP/hacs-validation.log"
+          for attempt in {1..12}; do
+            if podman run --rm \
+              --env INPUT_GITHUB_TOKEN \
+              --env REPOSITORY=grayslawson/ha-switchboard \
+              --env CATEGORY=integration \
+              --env REPOSITORY_REF="$ref_name" \
+              --env GITHUB_WORKSPACE=/github/workspace \
+              --volume "$RUNNER_TEMP/public:/github/workspace:ro" \
+              ghcr.io/hacs/action@sha256:dc92fdad2f6ffbe74bffb7269d781ea8e064f52d9bb486cdf3925d74e7ab6ebf \
+              >"$hacs_log" 2>&1; then
+              cat "$hacs_log"
+              break
+            fi
+            if [ "$attempt" -eq 12 ]; then
+              cat "$hacs_log" >&2
+              echo "public mirror HACS validation did not converge within 120 seconds" >&2
+              exit 1
+            fi
+            sleep 10
+          done
           unset INPUT_GITHUB_TOKEN
       - name: Build HACS release archive
         if: ${{ forgejo.ref_type == 'tag' }}
