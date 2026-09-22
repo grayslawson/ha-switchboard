@@ -8,11 +8,12 @@ The goal is simple: make everyday home control quick and inexpensive, then hand 
 >
 > The gateway, Supervisor discovery path, Core integration lifecycle, profile model, policy checks, and packaging paths are available in this checkout and locally tested. Read [Current limitations and roadmap](#current-limitations-and-roadmap) before deploying this to a real home.
 
-This checkout declares the coordinated source version `0.2.1`. It is a source
-release candidate, not a published or complete release: the App is still
-marked experimental and the external/runtime gates remain open. A source
-version alone is not proof of publication; check the matching public tag,
-multi-architecture image, and GitHub Release before installing.
+This checkout declares the coordinated source version `0.2.1`. The source
+release candidate is published as the `v0.2.1` App image, GitHub Release, and
+HACS archive, but it remains experimental and is not a complete production
+release while the remaining live-pair, rollback, and AppArmor gates are open.
+Verify the matching public tag, multi-architecture image, and GitHub Release
+before installing.
 
 Version policy is intentionally strict: the App config/image, Python package,
 Core manifest, and changelog must carry the same semantic version. A `v0.2.1`
@@ -187,12 +188,11 @@ intent handlers and conversation agents remain independent.
 
 The App and Core integration are intentionally separate artifacts.
 
-1. After the App release is published, add
+1. Add
    `https://github.com/grayslawson/ha-switchboard` in **Settings → Apps → App
    store → ⋮ → Repositories**, then install and start **HA Switchboard**. The
-   local `0.2.1` source candidate is not proof that this App repository or its
-   image is currently installable. For local development, use the disposable
-   harness described below instead.
+   published `v0.2.1` image is the release artifact; for local development,
+   use the disposable harness described below instead.
 2. Configure the App as described in [app/DOCS.md](app/DOCS.md): use `adapter_only`, keep `ingress_only: true`, set a long random `gateway_token`, and start with `local_only` privacy.
 3. Install the separate `ha_switchboard` Core integration through HACS or by copying `custom_components/ha_switchboard/`. HACS requires the exported GitHub repository to be reachable; manual copy is the local source path. Add it from **Settings → Devices & services → Add integration** and accept Supervisor discovery. If discovery is unavailable, use the discovered App host and port with the same token.
 4. In **Settings → Voice assistants**, choose **HA Switchboard** as the Conversation agent for an Assist pipeline.

@@ -132,7 +132,7 @@ def test_coordinated_source_version_and_public_metadata_are_truthful() -> None:
     for relative in ("README.md", "app/README.md", "docs/RELEASE.md"):
         text = _text(relative).lower()
         assert "release candidate" in text
-        assert "not a published" in text
+        assert "not a complete" in text
 
 
 def test_migration_rollback_provenance_and_canary_requirements_are_explicit() -> None:
@@ -173,6 +173,20 @@ def test_migration_rollback_provenance_and_canary_requirements_are_explicit() ->
         "T148, T149, and T151",
     ):
         assert phrase.lower() in contract.lower()
+
+
+def test_published_release_evidence_keeps_installed_pair_gates_open() -> None:
+    evidence = _text(
+        "specs/001-ha-switchboard-completeness/evidence/release-v0.2.1-2026-09-22.md"
+    )
+    for phrase in (
+        "protected-master",
+        "ha_switchboard.zip",
+        "GHCR",
+        "installed public App/Core",
+        "AppArmor",
+    ):
+        assert phrase in evidence
 
 
 def test_external_dependency_review_keeps_app_core_provider_boundaries_clear() -> None:

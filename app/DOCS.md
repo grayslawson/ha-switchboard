@@ -24,12 +24,13 @@ bounded request data described by the gateway contract.
 
 ## Current verification status
 
-This checkout is an experimental `0.2.1` source release candidate. Local E2E,
-image, and host-test results cover this checkout and its disposable harness.
-They do not prove a public release, a working HACS install/update path, or a
-live App/Core canary. Keep the App, image, Python package, Core manifest, and
-changelog on one semantic version; see [`docs/RELEASE.md`](../docs/RELEASE.md)
-for the complete provenance and rollback contract.
+This checkout is the experimental `0.2.1` source release candidate, published
+as the `v0.2.1` App image and GitHub Release. Local E2E, image, and host-test
+results cover this checkout and its disposable harness; the remaining
+installed public App/Core migration, rollback, and AppArmor gates are still
+open. Keep the App, image, Python package, Core manifest, and changelog on one
+semantic version; see [`docs/RELEASE.md`](../docs/RELEASE.md) for the complete
+provenance and rollback contract.
 
 The source manifest sets `hassio_api: true` because the App needs scoped
 Supervisor self-information and discovery. That is narrower than broad Home

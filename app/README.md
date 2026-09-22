@@ -5,10 +5,10 @@ sent to its Conversation entity, it keeps the bounded decision path close to
 Home Assistant and can hand open-ended
 requests to a user-configured traditional LLM when policy allows it.
 
-This checkout declares the coordinated source version `0.2.1`. It is a source
-release candidate, not a published or complete release; the App remains
-experimental until the external and live gates in `docs/RELEASE.md` pass. A
-source version alone is not proof of publication; check for the matching
+This checkout declares the coordinated source version `0.2.1`. The source
+release candidate is published as `v0.2.1`, but the App remains experimental
+and is not a complete production release until the remaining live-pair,
+rollback, and AppArmor gates in `docs/RELEASE.md` pass. Verify the matching
 source tag, multi-architecture image, and GitHub Release before installing it
 from the public package.
 
@@ -22,9 +22,10 @@ OpenRouter/Jev compatibility note, security model, and troubleshooting, read
 [`DOCS.md`](DOCS.md).
 
 Local E2E, image, and host-test results cover this checkout and its disposable
-harness. They do not prove a public release or a working HACS install/update
-path. For the detailed acceptance matrix and current open-gate evidence, see
-the repository's [release checklist](../docs/RELEASE.md).
+harness. The published v0.2.1 artifact also has independent GHCR provenance
+and HACS validation; the installed public App/Core migration and rollback
+gates remain open. For the detailed acceptance matrix and current open-gate
+evidence, see the repository's [release checklist](../docs/RELEASE.md).
 
 In 0.2.1 the App provides the gateway, redacted profile store, readiness and
 scan UI, and provider routing. It does not discover Home Assistant entities,

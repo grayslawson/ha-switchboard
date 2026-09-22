@@ -57,11 +57,16 @@ revision before creating its public tag and Release. Existing public release
 tags are not force-moved on reruns. These are release gates, not a substitute
 for a live Home Assistant canary.
 
-The coordinated source version in this checkout is `0.2.1`. It is a source
-release candidate, not a published or complete release. The App remains
-marked `experimental`, and the limitations below are part of the contract.
-A local version is not public-release evidence. Verify the matching tag,
-multi-architecture image, and GitHub Release before announcing availability.
+The coordinated source version in this checkout is `0.2.1`. The source
+release candidate is published as `v0.2.1`, with a matching protected-master
+revision, GitHub mirror/tag/Release, HACS archive, and GHCR multi-architecture
+image. The App remains marked `experimental` and is not a complete production
+release while the installed-pair, rollback, and AppArmor gates below remain
+open. Verify the matching tag, image, and GitHub Release before announcing
+availability.
+A local version is not public-release evidence; the published claims above are
+based on the recorded protected-master, mirror, HACS, GHCR, and Release
+readbacks rather than on this checkout alone.
 
 ### Version policy
 

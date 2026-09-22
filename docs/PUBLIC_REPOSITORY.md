@@ -68,12 +68,11 @@ prove that the exported repository can be installed or updated through HACS.
 ## Current source status
 
 This checkout records source metadata for `0.2.1` in the App, gateway package,
-Core manifest, Docker build metadata, and changelog. It does not record a
-successful public mirror, protected-master ancestry, GitHub tag or Release,
-GHCR digest, public HACS acceptance, or live App/Core canary. A local pinned
-Hassfest run against an exported tree, if recorded in private evidence, is
-still not public-mirror or installed acceptance. Keep those states separate
-when preparing a release.
+Core manifest, Docker build metadata, and changelog. The published `v0.2.1`
+artifact has protected-master, public-mirror/tag/Release, GHCR, and HACS
+evidence recorded in the release checklist. That does not close the separate
+installed App/Core migration, rollback, or AppArmor gates; keep those states
+separate when evaluating a deployment.
 
 The HACS metadata is intentionally limited to the custom-integration boundary:
 `hacs.json` enables README rendering and release-archive installation using
