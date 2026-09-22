@@ -76,10 +76,10 @@ still not public-mirror or installed acceptance. Keep those states separate
 when preparing a release.
 
 The HACS metadata is intentionally limited to the custom-integration boundary:
-`hacs.json` enables README rendering and release-archive installation, and
-`repository.yaml` supplies the repository name, URL, and maintainer. These
-files do not install the Supervisor App and do not constitute HACS catalog
-acceptance.
+`hacs.json` enables README rendering and release-archive installation using
+the `ha_switchboard.zip` release asset, and `repository.yaml` supplies the
+repository name, URL, and maintainer. These files do not install the
+Supervisor App and do not constitute HACS catalog acceptance.
 
 ## Public support boundary
 

@@ -123,6 +123,7 @@ def test_coordinated_source_version_and_public_metadata_are_truthful() -> None:
         "name": "HA Switchboard",
         "render_readme": True,
         "zip_release": True,
+        "filename": "ha_switchboard.zip",
     }
     repository = _text("repository.yaml")
     assert "name: HA Switchboard" in repository

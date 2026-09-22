@@ -98,6 +98,13 @@ submit the repository to `hacs/default`. Private Forgejo jobs alone do not
 satisfy that public Actions requirement. Keep the custom-repository path until
 those gates are proven on the exported GitHub tree.
 
+This project enables HACS release-archive installation with
+`hacs.json`'s `filename: "ha_switchboard.zip"`. The public mirror workflow
+creates that asset from the exported `custom_components/ha_switchboard/`
+directory and attaches it to each tagged GitHub Release. The asset name and
+archive layout are release-contract values; changing either requires updating
+the workflow and the HACS metadata together.
+
 When Docker/AppArmor is available, use the official Home Assistant Apps test
 harness (or an equivalent local harness), install the local `app/`, and
 verify:

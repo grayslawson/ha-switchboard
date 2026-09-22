@@ -86,9 +86,13 @@ def test_release_publication_requires_static_and_external_metadata_evidence() ->
     assert mirror.index("Gate release on matching multi-architecture App image") < mirror.index("Push public master")
     assert mirror.index("Verify public mirror ref") < mirror.index("Validate published Core metadata with HACS")
     assert mirror.index("Validate published Core metadata with HACS") < mirror.index("Create or update GitHub release from tag")
+    assert mirror.index("Build HACS release archive") < mirror.index("Create or update GitHub release from tag")
     assert "actionlint -config-file" in mirror
     assert "hassfest@sha256" in mirror
     assert "hacs/action@sha256" in mirror
+    assert 'asset_name = "ha_switchboard.zip"' in mirror
+    assert "upload_url" in mirror
+    assert "GitHub release asset verified" in mirror
     assert "sleep 10" in mirror
     assert "for attempt in {1..12}" in mirror
     assert "within 120 seconds" in mirror

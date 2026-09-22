@@ -234,22 +234,51 @@ jobs:
             --volume "$RUNNER_TEMP/public:/github/workspace:ro" \
             ghcr.io/hacs/action@sha256:dc92fdad2f6ffbe74bffb7269d781ea8e064f52d9bb486cdf3925d74e7ab6ebf
           unset INPUT_GITHUB_TOKEN
+      - name: Build HACS release archive
+        if: ${{ forgejo.ref_type == 'tag' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+          from zipfile import ZIP_DEFLATED, ZipFile
+
+          root = Path(os.environ["RUNNER_TEMP"]) / "public"
+          source = root / "custom_components" / "ha_switchboard"
+          asset = Path(os.environ["RUNNER_TEMP"]) / "ha_switchboard.zip"
+          files = sorted(path for path in source.rglob("*") if path.is_file())
+          if not files:
+              raise SystemExit("HACS release archive source is empty")
+          with ZipFile(asset, "w", compression=ZIP_DEFLATED) as archive:
+              for path in files:
+                  archive.write(path, path.relative_to(root).as_posix())
+          digest = hashlib.sha256(asset.read_bytes()).hexdigest()
+          print(f"built {asset.name}: files={len(files)} bytes={asset.stat().st_size} sha256={digest}")
+          PY
+          test -s "$RUNNER_TEMP/ha_switchboard.zip"
       - name: Create or update GitHub release from tag
         if: ${{ forgejo.ref_type == 'tag' }}
         env:
           GH_MIRROR_TOKEN: ${{ secrets.GH_MIRROR_TOKEN }}
           RELEASE_TAG: ${{ forgejo.ref_name }}
+          RELEASE_ASSET: ${{ runner.temp }}/ha_switchboard.zip
         run: |
           set -euo pipefail
           python3 - <<'PY'
+          import hashlib
           import json
           import os
+          from pathlib import Path
           from urllib.error import HTTPError
           from urllib.parse import quote
           from urllib.request import Request, urlopen
 
           token = os.environ["GH_MIRROR_TOKEN"]
           tag = os.environ["RELEASE_TAG"]
+          asset_path = Path(os.environ["RELEASE_ASSET"])
+          asset_name = "ha_switchboard.zip"
           base = "https://api.github.com/repos/grayslawson/ha-switchboard"
           headers = {
               "Accept": "application/vnd.github+json",
@@ -268,7 +297,7 @@ jobs:
           except HTTPError as error:
               if error.code != 404:
                   raise
-              request(
+              release = request(
                   "POST",
                   f"{base}/releases",
                   {"tag_name": tag, "name": tag, "generate_release_notes": True},
@@ -276,6 +305,43 @@ jobs:
               print(f"created GitHub release {tag}")
           else:
               print(f"GitHub release already exists: {release['html_url']}")
+
+          if release.get("tag_name") != tag:
+              raise SystemExit(f"GitHub release tag mismatch: {release.get('tag_name')!r}")
+          expected_bytes = asset_path.read_bytes()
+          expected_size = len(expected_bytes)
+          expected_digest = "sha256:" + hashlib.sha256(expected_bytes).hexdigest()
+          assets = request("GET", f"{base}/releases/{release['id']}/assets?per_page=100")
+          existing = next((item for item in assets if item.get("name") == asset_name), None)
+          if existing is not None:
+              if existing.get("size") != expected_size:
+                  raise SystemExit(
+                      f"GitHub release asset size mismatch: {existing.get('size')} != {expected_size}"
+                  )
+              remote_digest = existing.get("digest")
+              if remote_digest and remote_digest != expected_digest:
+                  raise SystemExit(
+                      f"GitHub release asset digest mismatch: {remote_digest} != {expected_digest}"
+                  )
+              print(f"GitHub release asset already verified: {asset_name} ({expected_size} bytes)")
+          else:
+              upload_url = release["upload_url"].split("{", 1)[0]
+              upload_url = f"{upload_url}?name={quote(asset_name, safe='')}"
+              upload_request = Request(
+                  upload_url,
+                  data=expected_bytes,
+                  headers={
+                      **headers,
+                      "Content-Type": "application/zip",
+                      "Content-Length": str(expected_size),
+                  },
+                  method="POST",
+              )
+              with urlopen(upload_request, timeout=60) as response:
+                  uploaded = json.loads(response.read())
+              if uploaded.get("name") != asset_name or uploaded.get("size") != expected_size:
+                  raise SystemExit(f"GitHub release asset upload mismatch: {uploaded}")
+              print(f"uploaded GitHub release asset: {asset_name} ({expected_size} bytes)")
           PY
       - name: Verify GitHub release
         if: ${{ forgejo.ref_type == 'tag' }}
@@ -304,5 +370,10 @@ jobs:
           assert release.get("tag_name") == tag, release
           assert release.get("draft") is False, release
           assert release.get("prerelease") is False, release
+          assets = release.get("assets", [])
+          asset = next((item for item in assets if item.get("name") == "ha_switchboard.zip"), None)
+          assert asset is not None, assets
+          assert asset.get("size", 0) > 0, asset
+          print(f"GitHub release asset verified: {asset['name']} ({asset['size']} bytes)")
           print(f"GitHub release verified: {release['html_url']}")
           PY
