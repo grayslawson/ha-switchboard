@@ -133,6 +133,24 @@ def test_openai_compatible_fallback_normalizes_echoed_choice_object(monkeypatch:
     assert result["proposals"][0]["capability_id"] == "cap-light-a"
 
 
+def test_openai_compatible_fallback_discards_bounded_proposal_explanation(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        lambda *_args, **_kwargs: _Response({"choices": [{"message": {"content": json.dumps({
+            "kind": "tool_proposal",
+            "choice": "cap-light-a",
+            "text": "I found the offered light capability.",
+            "reason": "matched",
+            "parameters": {},
+        })}}]}),
+    )
+
+    result = OpenRouterFallbackAdapter().invoke(None, _request())
+
+    assert result["proposals"][0]["capability_id"] == "cap-light-a"
+    assert "text" not in result["proposals"][0]
+
+
 def test_prose_response_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "urllib.request.urlopen",

@@ -242,6 +242,96 @@ def test_openai_compatible_fallback_can_select_confirmation_required_action(
     _assert_safe(result.to_dict())
 
 
+def test_jev_refusal_can_handoff_one_bounded_proposal_to_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    sanitized_discovery: dict[str, Any],
+) -> None:
+    gateway = _openai_gateway(tmp_path, sanitized_discovery)
+    gateway.jev = StaticJevClient(
+        JevDecision(RouteKind.REFUSE, Complexity.REASONING, reason="jev could not classify")
+    )
+    candidate = _candidate(gateway, domain="lock", operation="unlock")
+
+    def urlopen(request, timeout):
+        payload = json.loads(request.data.decode("utf-8"))
+        bounded_request = json.loads(payload["messages"][1]["content"])
+        offered = bounded_request["choices"]
+        assert len(offered) == 1
+        content = json.dumps({
+            "kind": "tool_proposal",
+            "choice": offered[0]["capability_id"],
+            "text": "",
+            "reason": "the offered unlock capability matches the request",
+            "parameters": {},
+        })
+        return _Response({"choices": [{"message": {"content": content}}]})
+
+    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    result = gateway.process(_request(
+        gateway,
+        candidate,
+        request_id="gateway-fallback-after-jev-refusal",
+        utterance="Unlock the front door",
+    ))
+
+    assert result.kind is ResultKind.CONFIRM
+    assert result.response_key == "confirmation_required"
+    assert result.capability_id == candidate["capability_id"]
+    assert result.route_id == "typed-local"
+    _assert_safe(result.to_dict())
+
+
+def test_fallback_shortlist_prioritizes_named_target_beyond_context_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    sanitized_discovery: dict[str, Any],
+) -> None:
+    gateway = _openai_gateway(tmp_path, sanitized_discovery)
+    candidate = _candidate(gateway, domain="lock", operation="unlock")
+    filler = [
+        {
+            "capability_id": f"opaque-filler-{index}",
+            "display_name": f"Unrelated device {index}",
+            "domain": "light",
+            "operation": "turn_on",
+            "parameter_schema": {"properties": {}, "required": []},
+        }
+        for index in range(16)
+    ]
+
+    def urlopen(request, timeout):
+        payload = json.loads(request.data.decode("utf-8"))
+        bounded_request = json.loads(payload["messages"][1]["content"])
+        offered = bounded_request["choices"]
+        assert len(offered) == 16
+        assert offered[0]["capability_id"] == candidate["capability_id"]
+        content = json.dumps({
+            "kind": "tool_proposal",
+            "choice": offered[0]["capability_id"],
+            "text": "The model may explain this, but Switchboard discards it.",
+            "reason": "the named unlock capability matches",
+            "parameters": {},
+        })
+        return _Response({"choices": [{"message": {"content": content}}]})
+
+    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    utterance = f"Unlock {candidate['display_name'].split(':', 1)[0]}"
+    result = gateway.process({
+        **_request(
+            gateway,
+            candidate,
+            request_id="gateway-fallback-shortlist",
+            utterance=utterance,
+        ),
+        "candidates": [*filler, candidate],
+    })
+
+    assert result.kind is ResultKind.CONFIRM
+    assert result.response_key == "confirmation_required"
+    assert result.capability_id == candidate["capability_id"]
+
+
 def test_privacy_blocked_fallback_never_reaches_transport(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,

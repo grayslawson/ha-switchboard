@@ -49,7 +49,7 @@ schema:
   fallback_provider: "list(disabled|openrouter|openai_compatible|typed_http)"
   fallback_endpoint: "url?"
   fallback_model: "str?"
-  fallback_api_key: "password"
+  fallback_api_key: "password?"
   gateway_token: "password"
   profile_refresh_minutes: "int(1,1440)"
   privacy_mode: "list(local_only|jev_hosted_allowed|hosted_allowed)"

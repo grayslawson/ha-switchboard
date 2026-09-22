@@ -150,7 +150,7 @@ scenarios through a fixture pipeline.
 - [x] T056 [P] [US4] Add parameter schema/range/enum extraction and normalization tests in tests/test_gateway_parameters.py
 - [x] T057 [P] [US4] Add missing, invalid, conflicting, and overflow parameter tests in tests/test_gateway_parameters.py and tests/test_execution.py
 - [x] T058 [P] [US4] Add clarification/confirmation context lifecycle tests in tests/test_conversation_context.py
-- [ ] T059 [US4] Complete live follow-up Assist runtime verification for same conversation, different user, expiry, cancellation, and replay in tests/test_e2e_harness.py (deterministic tests cover user binding/TTL/cancellation/replay; the bounded live probe created and removed a temporary second user, while the configured provider refused or clarified the high-risk fixture instead of producing a confirmation. The source-level OpenAI-compatible fallback and Gateway confirmation boundary now pass; installed provider-dependent follow-up acceptance remains open)
+- [ ] T059 [US4] Complete live follow-up Assist runtime verification for same conversation, different user, expiry, cancellation, and replay in tests/test_e2e_harness.py (the installed provider-backed probe now proves same-conversation confirmation, cancellation, and one-shot replay with the existing 28-entity fixture; deterministic tests cover user binding/TTL, while second-user and natural-expiry live gates remain explicitly unavailable)
 
 ### Implementation for User Story 4
 
@@ -434,7 +434,7 @@ all user stories are implemented.
   path, credentials, query, or fragment), and its regression test is included
   in the current source result. T059 now also supports explicitly supplied
   second-user and natural-TTL opt-ins without changing the safe default or
-  persisting credentials. The current source result is 498 tests with 4
+  persisting credentials. The current source result is 511 tests with 4
   expected skips; the preserve-first/local-acceptance focused suite passes
   32 tests with one opt-in live skip.
 - Latest multi-target/UI hardening: explicit light, switch, and fan on/off
@@ -456,7 +456,7 @@ all user stories are implemented.
   standalone Compose model has a credential-free bounded smoke validator, and
   Core diagnostics expose the last reconcile trigger (`startup`, `manual`,
   `invalidation`, `recovery`, or `periodic`). The current source result is
-  **498 passed, 4 skipped**; these changes do not close the live provider or
+  **511 passed, 4 skipped**; these changes do not close the live provider or
   external-release gates.
 - Latest recovery hardening: the authorized restart path now requires a
   strict boolean opt-in, rejects malformed or unsuccessful non-empty Core
@@ -480,7 +480,7 @@ all user stories are implemented.
 
 - Reviewed source candidate: coordinated v0.2.1 metadata across the App,
   gateway, Core integration, packaging, and documentation authorities.
-- Full source validation passes: **506 passed, 4 expected skips**. The focused
+- Full source validation passes: **511 passed, 4 expected skips**. The focused
   provider/release/preflight regression slice passes **48 tests**.
 - `check_release_boundary.py --versions`, `check_release_boundary.py
   --quality`, the release boundary check, the
@@ -507,11 +507,14 @@ all user stories are implemented.
   evidence.
 - Latest provider acceptance: the OpenAI-compatible adapter now retries once
   without the optional JSON-schema hint after a bounded HTTP 400, accepts only
-  the offered opaque capability ID, and the Gateway confirmation boundary is
-  covered for lock and cover operations. A real provider boundary probe also
-  returned a bounded confirmation result from a sanitized fixture. The
-  installed high-risk follow-up remains open until a configured provider emits
-  the confirmation and the full continuation/expiry matrix is run.
+  the offered opaque capability ID, discards bounded typed-proposal
+  explanations, and the Gateway confirmation boundary is covered for lock and
+  cover operations. Jev refusals can use one eligible fallback proposal, which
+  re-enters the same validation and confirmation gates. The installed
+  provider-backed Assist probe proved same-conversation confirmation,
+  cancellation, and one-shot replay; shallow continuation metadata avoids the
+  Core nested-state limit. A second live user and natural-TTL expiry remain
+  explicitly open.
 
 ## Dependencies and Execution Order
 

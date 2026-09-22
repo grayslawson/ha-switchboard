@@ -13,6 +13,7 @@ from .change_monitor import ChangeMonitor
 from .diagnostics import DiagnosticLog
 from .handoff import HandoffBroker, HandoffError, HandoffInvalidResponse
 from .jev_client import JevClient, JevError
+from .limits import MAX_CONTEXT_ITEMS
 from .policy import PolicyConfig, evaluate_capability, validate_parameters
 from .profile import ProfileCompiler, mark_sections_stale
 from .protocol import (
@@ -406,7 +407,14 @@ class Gateway:
             return self._remember(self._result(request, ResultKind.CLARIFY, "clarification_required", decision=decision))
         if decision.route is RouteKind.REFUSE:
             if self.routes.routes:
-                return self._remember(self._delegate(request, decision, batch=batch, allow_proposal=False))
+                # Jev's refusal means it could not safely classify the request;
+                # it is not an authorization to bypass the fallback boundary.
+                # Let one eligible fallback offer a bounded opaque proposal,
+                # then send it through the same verb/name, parameter, policy,
+                # confirmation, freshness, execution, and verification gates
+                # as every other proposal.  This is what makes a configured
+                # capable fallback useful without turning it into a tool agent.
+                return self._remember(self._delegate(request, decision, batch=batch))
             return self._remember(self._result(request, ResultKind.REFUSE, "request_refused", decision=decision))
         if decision.route is RouteKind.READ_ONLY:
             return self._remember(self._result(request, ResultKind.ANSWER, "read_only_answer", decision=decision))
@@ -543,7 +551,7 @@ class Gateway:
             conversation_id=request.conversation_id,
             utterance=request.utterance,
             bounded_context=request.bounded_context,
-            relevant_facts=tuple(request.candidates[:16]),
+            relevant_facts=self._handoff_candidates(request),
             route_id=route.route_id,
             complexity=decision.complexity,
             reason=decision.reason or "jev_delegated",
@@ -594,6 +602,24 @@ class Gateway:
         if not policy.allowed:
             return self._result(request, ResultKind.REFUSE, policy.response_key, decision=decision, route_id=route.route_id, handoff_id=handoff_id, capability_id=capability_id)
         return self._result(request, ResultKind.EXECUTE, "execute", decision=decision, route_id=route.route_id, handoff_id=handoff_id, capability_id=capability_id, parameters=parameters)
+
+    def _handoff_candidates(self, request: DecisionRequest) -> tuple[Mapping[str, Any], ...]:
+        """Keep the handoff bound while prioritizing an explicit target.
+
+        Core may supply more capabilities than the provider context bound. A
+        fixed prefix can hide a named lock, cover, or later-profile device;
+        prioritize candidates whose display name and operation match the
+        request, then fill the remaining bounded slots in source order.
+        """
+
+        prioritized: list[Mapping[str, Any]] = []
+        remainder: list[Mapping[str, Any]] = []
+        for candidate in request.candidates:
+            if not isinstance(candidate, Mapping):
+                continue
+            target = prioritized if self._fallback_single_matches(request.utterance, candidate) else remainder
+            target.append(candidate)
+        return tuple((prioritized + remainder)[:MAX_CONTEXT_ITEMS])
 
     @staticmethod
     def _fallback_single_matches(utterance: str, candidate: Mapping[str, Any]) -> bool:

@@ -81,6 +81,12 @@ def test_gateway_mode_schema_exposes_only_adapter_only_and_documents_migration()
         assert "not a current schema choice" in text
 
 
+def test_fallback_api_key_is_optional_when_the_route_does_not_need_auth() -> None:
+    manifest = (ROOT / "app" / "config.yaml").read_text(encoding="utf-8")
+    schema = manifest.split("schema:", 1)[1].split("backup:", 1)[0]
+    assert 'fallback_api_key: "password?"' in schema
+
+
 def test_app_entrypoint_is_executable_under_custom_apparmor_profile() -> None:
     dockerfile = (ROOT / "app" / "Dockerfile").read_text(encoding="utf-8")
     apparmor = (ROOT / "app" / "apparmor.txt").read_text(encoding="utf-8")

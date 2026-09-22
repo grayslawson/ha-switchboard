@@ -19,7 +19,7 @@ installed v0.2.1 disposable canary now pass. The status remains partial for
 the provider-dependent high-risk follow-up, AppArmor enforcement on this WSL
 host, and the external publication gates.
 
-The current source-level run for candidate `0.2.1` was `506 passed, 4
+The current source-level run for candidate `0.2.1` was `511 passed, 4
 skipped`.
 The tracked credential-free `tools/standalone-smoke.sh` is now included in
 the public export allowlist and the export regression check passes. External
@@ -64,10 +64,11 @@ the 2 native-Core-only surfaces present and unexposed, and 24 of 24 direct
 service/state transitions verified. Earlier local image/E2E records also
 reported non-root, token-boundary, ingress, persistence, and
 provider-degraded-readiness checks. Those are local records, not public-image,
-HACS/Hassfest, provider-compatibility, or App/Core restart proof. The live
-follow-up record proves same-conversation continuation, cancellation, and
-replay safety; second-user and natural-TTL inputs remain unavailable. The
-current read-only pass did not rerun these mutating/opt-in probes.
+HACS/Hassfest, provider-compatibility, or App/Core restart proof. The
+provider-backed follow-up record proves same-conversation confirmation,
+cancellation, and one-shot replay safety; second-user and natural-TTL inputs
+remain unavailable. The current read-only pass did not rerun these
+mutating/opt-in probes.
 
 **Additional native Assist evidence (2026-09-20):** Earlier bounded records
 show the real `Switchboard` pipeline with `prefer_local_intents`, a completed
@@ -247,7 +248,7 @@ full provider responses in the evidence record.
   package, Core manifest, and changelog.
 - Current local source checks: `python3 -m compileall -q
   app/ha_switchboard custom_components/ha_switchboard tools tests` passed;
-  `python3 -m pytest -q tests` passed (`506 passed, 4 skipped`); and
+  `python3 -m pytest -q tests` passed (`511 passed, 4 skipped`); and
   `python3 tools/check_release_boundary.py --quality` passed. The current
   skips are the unavailable host ConversationEntity/config-flow dependencies
   and two opt-in live fixture probes. `git diff --check` is clean for the
@@ -267,8 +268,8 @@ full provider responses in the evidence record.
 
 The exact gates still open are the provider-dependent live portions of T059,
 the complete T148 quickstart, and T149/T151 publication and canary evidence.
-That includes a confirmation-producing installed Jev/fallback follow-up,
-natural-TTL follow-up, installed AppArmor enforcement, HACS, public
+That includes a second-user and natural-TTL follow-up, installed AppArmor
+enforcement, HACS, public
 mirror/tag/release agreement, GHCR immutable multi-architecture provenance,
 and installed rollback evidence. Local metadata, tests, a fixture, or a local
 image cannot close any of those external gates.

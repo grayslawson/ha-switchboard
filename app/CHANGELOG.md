@@ -13,6 +13,13 @@ and public GitHub release, not by this changelog alone.
 - Adds bounded OpenAI-compatible fallback compatibility for providers that
   reject the optional JSON-schema response hint, while keeping strict
   Switchboard response validation and opaque capability selection.
+- Allows an eligible fallback to offer one revalidated proposal when Jev
+  refuses or is unavailable, prioritizes explicit named targets within the
+  bounded provider context, and discards bounded provider-side explanations.
+- Stores only shallow opaque metadata for Core-local clarification and
+  confirmation continuations, avoiding nested profile-state failures while
+  preserving the same-conversation confirmation, cancellation, and one-shot
+  replay checks.
 - Fixes the local development rebuild path when Supervisor sees a changed
   App version, and records the event-driven preserve-first App/Core restart
   watcher and disposable v0.2.1 Assist canary evidence.

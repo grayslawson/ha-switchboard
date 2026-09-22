@@ -116,6 +116,38 @@ def _assert_gateway_safe(value: Any, key: str | None = None) -> None:
             _assert_gateway_safe(item)
 
 
+def _pending_request_payload(request: "ConversationRequest") -> dict[str, Any]:
+    """Build a shallow, Core-local continuation snapshot.
+
+    Profile candidates contain nested parameter schemas that are useful for a
+    live gateway request but too deep for short-lived follow-up state. The
+    gateway rebuilds policy and parameters from its current profile when the
+    continuation is accepted, so the store needs only opaque identity and
+    matching metadata. Current state and organization context are deliberately
+    omitted to avoid replaying stale observations.
+    """
+
+    payload = request.payload()
+    compact_candidates: list[dict[str, Any]] = []
+    for candidate in request.candidates[:64]:
+        if not isinstance(candidate, Mapping):
+            continue
+        compact: dict[str, Any] = {}
+        for key in ("capability_id", "display_name", "domain", "operation", "area", "floor", "risk_class"):
+            value = candidate.get(key)
+            if isinstance(value, str) and value:
+                compact[key] = value[:256]
+        if isinstance(candidate.get("available"), bool):
+            compact["available"] = candidate["available"]
+        if compact.get("capability_id"):
+            compact_candidates.append(compact)
+    payload["candidates"] = compact_candidates
+    payload["bounded_context"] = []
+    payload["sanitized_state"] = {}
+    _assert_gateway_safe(payload)
+    return payload
+
+
 def _optional_request_id(boundary_method: Any, request_id: str) -> dict[str, str]:
     """Pass idempotency metadata only to boundaries that support it.
 
@@ -545,7 +577,12 @@ class JevConversationEntity(ConversationEntity):
             kind = "confirmation" if result.get("response_key") == "confirmation_required" else "clarification"
             if result.get("response_key") == "parameter_required":
                 kind = "parameter"
-            self.context_store.put(request.conversation_id, user_id, kind, request.payload())
+            self.context_store.put(
+                request.conversation_id,
+                user_id,
+                kind,
+                _pending_request_payload(request),
+            )
             self.diagnostics.record(
                 "continuation_requested",
                 correlation_id=request.request_id,

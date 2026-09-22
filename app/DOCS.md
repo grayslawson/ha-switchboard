@@ -104,6 +104,14 @@ result. An eligible fallback is for open-ended requests that Jev cannot answer;
 it returns bounded prose or one proposal and is never an alternate Home
 Assistant agent.
 
+When Jev returns `refuse` or is unavailable, an eligible fallback may still
+return one bounded proposal. That proposal is accepted only for an offered
+opaque capability whose operation and display name match the request, then it
+re-enters the same parameter, policy, confirmation, profile-freshness,
+execution, and post-action verification gates. A fixed provider context bound
+does not hide a named later-profile target: the gateway prioritizes explicit
+verb-and-name matches before filling the bounded candidate list.
+
 The native channels remain available around this boundary:
 
 - Home Assistant Assist pipelines, including the Home Assistant mobile app and
@@ -338,9 +346,15 @@ according to endpoint and privacy policy.
 For the generic chat-completions routes, Switchboard first sends the optional
 OpenAI JSON-Schema response hint. If the provider returns HTTP 400 for that
 optional feature, it makes one bounded retry without the hint and still
-requires the same strict JSON response contract. Other transport or HTTP
-failures fail closed and can be routed to another eligible fallback; the
-adapter never accepts provider tool calls or arbitrary service payloads.
+requires the same strict JSON response contract. A model may echo a bounded
+explanation in a typed proposal; Switchboard discards it and keeps only the
+opaque capability and validated parameters. Other transport or HTTP failures
+fail closed and can be routed to another eligible fallback; the adapter never
+accepts provider tool calls or arbitrary service payloads.
+
+The App schema leaves `fallback_api_key` optional. A provider that does not
+require authentication may leave it blank; the Jev key remains a separate
+credential even when both services happen to use the same account.
 
 Explicit plural on/off requests for exposed lights, switches, and fans can
 select an opaque group of up to 32 members. The request may target the whole

@@ -1290,6 +1290,7 @@ async def assist_pipeline_turn(
                 "conversation_id_observed": observed_conversation_id is not None,
                 "requested_conversation_id": conversation_id,
                 "event_count": len(event_types),
+                "event_types": event_types,
                 "continuation_requested": continuation_requested,
                 "completed": True,
             }
@@ -1933,10 +1934,15 @@ async def main(command: str) -> None:
                     "same_conversation": {
                         "status": conversation_status,
                         "conversation_id_reused": same_id,
+                        "conversation_id_observed": [
+                            bool(item.get("conversation_id_observed"))
+                            for item in turns
+                        ],
+                        "continuation_requested": first.get("continuation_requested"),
                         "reason": (
                             None
                             if conversation_status == "proved"
-                            else "Core Assist events did not echo the requested conversation identifier"
+                            else "initial turn did not request a continuation with the requested conversation"
                         ),
                     },
                     "cancellation": {
@@ -1946,25 +1952,30 @@ async def main(command: str) -> None:
                             and cancelled.get("continuation_requested") is False
                             else "failed"
                         ),
-                    "fixture_lock_unchanged": before_state == after_cancel_state,
-                    "continuation_requested": cancelled.get("continuation_requested"),
-                },
-                "replay": {
-                    "status": (
-                        "proved"
-                        if after_cancel_state == after_replay_state
-                        and replay.get("continuation_requested") is False
-                        else "failed"
-                    ),
-                    "fixture_lock_unchanged": after_cancel_state == after_replay_state,
-                    "continuation_requested": replay.get("continuation_requested"),
-                },
+                        "fixture_lock_unchanged": before_state == after_cancel_state,
+                        "continuation_requested": cancelled.get("continuation_requested"),
+                    },
+                    "replay": {
+                        "status": (
+                            "proved"
+                            if after_cancel_state == after_replay_state
+                            and replay.get("continuation_requested") is False
+                            else "failed"
+                        ),
+                        "fixture_lock_unchanged": after_cancel_state == after_replay_state,
+                        "continuation_requested": replay.get("continuation_requested"),
+                    },
                     "different_user": different_user,
                     "expiry": expiry,
                     "event_counts": {
                         "first": first["event_count"],
                         "cancelled": cancelled["event_count"],
                         "replay": replay["event_count"],
+                    },
+                    "event_types": {
+                        "first": first["event_types"],
+                        "cancelled": cancelled["event_types"],
+                        "replay": replay["event_types"],
                     },
                 }
                 print(json.dumps(report, sort_keys=True))

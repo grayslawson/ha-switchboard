@@ -352,8 +352,16 @@ class OpenAICompatibleFallbackAdapter:
         reason = result.get("reason", "fallback selection")
         if not isinstance(reason, str) or not reason.strip() or len(reason) > 512:
             raise OpenRouterFallbackInvalidResponse("fallback proposal reason is invalid")
-        if result.get("text") not in (None, ""):
-            raise OpenRouterFallbackInvalidResponse("fallback proposal contains prose")
+        # Compatible models sometimes populate the schema's optional text
+        # field with a short explanation even when they selected a typed
+        # proposal. It is deliberately discarded: proposal responses never
+        # surface provider prose, while an oversized or non-text value still
+        # fails the bounded contract.
+        proposal_text = result.get("text")
+        if proposal_text is not None and (
+            not isinstance(proposal_text, str) or len(proposal_text) > MAX_PROSE
+        ):
+            raise OpenRouterFallbackInvalidResponse("fallback proposal text is invalid")
         parameters = result.get("parameters", {})
         if not isinstance(parameters, Mapping) or len(parameters) > 8:
             raise OpenRouterFallbackInvalidResponse("fallback proposal parameters are invalid")

@@ -6,7 +6,7 @@ entity identifiers, utterances, or provider response bodies.
 
 ## Source and packaging gates
 
-- `python3 -m pytest -q`: **506 passed, 4 skipped**. The skips are the
+- `python3 -m pytest -q`: **511 passed, 4 skipped**. The skips are the
   unavailable host ConversationEntity/config-flow dependencies and the two
   explicitly opt-in live fixture probes.
 - `python3 tools/check_release_boundary.py --versions`: **PASS**.
@@ -53,20 +53,21 @@ source marker; this does not prove a public GHCR digest.
 
 ## Provider and follow-up behavior
 
-The local OpenRouter Decisions configuration was exercised through the real
-Assist pipeline:
+The local Jev/OpenRouter configuration was exercised through the real Assist
+pipeline:
 
 - Native routine light handling completed with a zero Jev diagnostic delta.
 - A normal fixture light control completed and returned a verified `Done.`
   response.
-- The lock/cover follow-up fixture did not produce a confirmation from the
-  configured OpenRouter decision response. The provider refused or clarified
-  those high-risk requests, so the live confirmation/cancellation/replay and
-  natural-TTL gates were not falsely marked proved.
-- A temporary non-owner HA user was created through the supported local Core
-  auth API, used only in memory for the bounded cross-user probe, and deleted
-  afterward. The probe preserved the fixture lock state and emitted no auth
-  material.
+- A temporary hosted OpenAI-compatible fallback was configured in memory for
+  the provider-backed follow-up probe. Jev refused the high-risk lock request;
+  the fallback returned one bounded opaque proposal, and the Gateway re-entered
+  it as a confirmation result under the normal policy gates.
+- The installed Assist follow-up then proved same-conversation confirmation,
+  cancellation without changing the fixture lock, and one-shot replay
+  protection. The sanitized report recorded only status booleans, event types,
+  and counts. A second live HA user and natural TTL-expiry run were not
+  supplied, so those two matrix gates remain open.
 
 The source/provider compatibility boundary was also exercised with a real
 OpenRouter-compatible response using sanitized fixture capabilities: the
@@ -75,14 +76,15 @@ adapter retried once without that optional hint, parsed the bounded JSON
 proposal, and the Gateway re-entered it as a confirmation result for a
 high-risk lock/cover capability. No provider key, raw request, raw response,
 entity identifier, or utterance is retained here. This proves provider
-compatibility and confirmation policy at the Gateway boundary; it does not
-close the installed Assist continuation/TTL gate above.
+compatibility and confirmation policy at the Gateway boundary, including the
+installed same-conversation continuation path. It does not close the
+second-user or natural-TTL portions of the matrix above.
 
-The deterministic Core tests still prove user binding, TTL expiry, explicit
-affirmative/negative handling, one-shot consumption, and replay protection.
-Live follow-up acceptance remains provider-response dependent until a Jev or
-fallback configuration that intentionally returns a confirmation decision is
-used.
+The continuation snapshot now stores only shallow opaque matching metadata;
+the live run therefore also covers the Core depth guard that previously
+rejected the full nested candidate payload. Deterministic Core tests still
+prove user binding, TTL expiry, explicit affirmative/negative handling,
+one-shot consumption, and replay protection.
 
 ## External gates
 

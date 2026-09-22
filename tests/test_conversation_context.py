@@ -3,8 +3,10 @@ from types import SimpleNamespace
 
 from custom_components.ha_switchboard.conversation_context import ConversationContextStore
 from custom_components.ha_switchboard.conversation import (
+    ConversationRequest,
     _candidate_reply,
     _confirmation_reply,
+    _pending_request_payload,
     _response_text,
 )
 
@@ -51,6 +53,43 @@ def test_context_store_rejects_raw_references_and_unbounded_nested_state():
         assert "too long" in str(exc)
     else:
         raise AssertionError("continuation text must be bounded")
+
+
+def test_pending_request_payload_compacts_nested_profile_schemas():
+    request = ConversationRequest(
+        text="Set the fixture brightness",
+        conversation_id="conversation",
+        profile_revision="profile-1",
+        candidates=(
+            {
+                "capability_id": "opaque-light",
+                "display_name": "Fixture light: set brightness",
+                "domain": "light",
+                "operation": "set_brightness",
+                "parameter_schema": {
+                    "type": "object",
+                    "properties": {
+                        "brightness": {"type": "number", "minimum": 0, "maximum": 100},
+                    },
+                    "required": ["brightness"],
+                },
+            },
+        ),
+        bounded_context=({"organization": {"name": "local"}},),
+        sanitized_state={"opaque-light": {"state": "on", "attributes": {"brightness": 50}}},
+    )
+
+    payload = _pending_request_payload(request)
+    ConversationContextStore().put("conversation", None, "parameter", payload)
+
+    assert payload["candidates"] == [{
+        "capability_id": "opaque-light",
+        "display_name": "Fixture light: set brightness",
+        "domain": "light",
+        "operation": "set_brightness",
+    }]
+    assert payload["bounded_context"] == []
+    assert payload["sanitized_state"] == {}
 
 
 def test_confirmation_and_clarification_replies_accept_voice_punctuation_only():

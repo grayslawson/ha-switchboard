@@ -163,6 +163,14 @@ still validates, confirms, executes, and verifies. An eligible fallback is for
 open-ended requests Jev cannot answer; it returns bounded prose or one
 proposal, never an alternate Home Assistant agent or service executor.
 
+If Jev refuses or is unavailable, a configured fallback can still offer one
+bounded proposal. Switchboard accepts it only when the offered opaque
+capability matches the request's explicit device name and operation, then runs
+the proposal through the same parameter, policy, confirmation, freshness,
+execution, and verification checks. Named targets are prioritized inside the
+bounded fallback context, so later-profile locks, covers, and other devices are
+not lost behind a fixed prefix.
+
 Native channels remain in place around this boundary:
 
 - Assist pipelines used by the Home Assistant mobile app and dashboard;
@@ -299,7 +307,7 @@ Fallback is opt-in. The `openrouter` and `openai_compatible` fallbacks use the
 generic OpenAI-compatible chat-completions adapter. OpenRouter supplies the
 default endpoint; a compatible provider needs its own base URL or full
 `/chat/completions` URL. Both require `fallback_model`; `fallback_api_key` is
-only needed when the service requires authentication. A hosted route also
+optional and only needed when the service requires authentication. A hosted route also
 requires `privacy_mode: hosted_allowed`;
 `jev_hosted_allowed` permits hosted Jev but not a hosted fallback. You can
 instead configure a local typed HTTP route subject to the
