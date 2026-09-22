@@ -8,6 +8,7 @@ import pytest
 from ha_switchboard.gateway import Gateway, GatewayConfig
 from ha_switchboard.handoff import HandoffBroker
 from ha_switchboard.jev_client import StaticJevClient
+from ha_switchboard.openrouter_fallback import OpenAICompatibleFallbackAdapter
 from ha_switchboard.protocol import (
     Complexity,
     JevDecision,
@@ -53,10 +54,10 @@ def _route(*, privacy_modes: tuple[PrivacyMode, ...]) -> ModelRoute:
     )
 
 
-def _candidate(gateway: Gateway) -> dict[str, Any]:
+def _candidate(gateway: Gateway, *, domain: str = "light", operation: str = "set_brightness") -> dict[str, Any]:
     capability = next(
         item for item in gateway.active_profile.capabilities
-        if item.domain == "light" and item.operation == "set_brightness"
+        if item.domain == domain and item.operation == operation
     )
     return {
         "capability_id": capability.capability_id,
@@ -67,11 +68,17 @@ def _candidate(gateway: Gateway) -> dict[str, Any]:
     }
 
 
-def _request(gateway: Gateway, candidate: MappingLike, *, request_id: str = "gateway-fallback") -> MappingLike:
+def _request(
+    gateway: Gateway,
+    candidate: MappingLike,
+    *,
+    request_id: str = "gateway-fallback",
+    utterance: str = "Set the living room lights brightness to 42 percent",
+) -> MappingLike:
     return {
         "request_id": request_id,
         "conversation_id": "conversation-fallback",
-        "utterance": "Set the living room lights brightness to 42 percent",
+        "utterance": utterance,
         "language": "en",
         "profile_revision": gateway.active_profile.revision,
         "policy_revision": "policy-1",
@@ -98,6 +105,25 @@ def _gateway(
             TypedHttpFallbackAdapter("http://local-reasoner:8090/decide"),
         ),
         config=GatewayConfig(privacy_mode=gateway_privacy),
+    )
+    gateway.reconcile(sanitized_discovery)
+    return gateway
+
+
+def _openai_gateway(tmp_path, sanitized_discovery: dict[str, Any]) -> Gateway:
+    routes = RouteRegistry((_route(privacy_modes=(PrivacyMode.LOCAL_ONLY,)),))
+    gateway = Gateway(
+        store=ProfileStore(tmp_path),
+        jev=StaticJevClient(JevDecision(RouteKind.CLARIFY, Complexity.REASONING, reason="bounded delegation")),
+        routes=routes,
+        handoff=HandoffBroker(
+            routes,
+            OpenAICompatibleFallbackAdapter(
+                endpoint="http://127.0.0.1:8090/chat/completions",
+                model="fixture/fallback",
+            ),
+        ),
+        config=GatewayConfig(privacy_mode=PrivacyMode.LOCAL_ONLY),
     )
     gateway.reconcile(sanitized_discovery)
     return gateway
@@ -163,6 +189,56 @@ def test_gateway_typed_fallback_round_trip_reenters_proposal_validation(
     assert result.capability_id == candidate["capability_id"]
     assert result.parameters == {"brightness": 42.0}
     _assert_safe(requests)
+    _assert_safe(result.to_dict())
+
+
+@pytest.mark.parametrize(
+    ("domain", "operation", "utterance"),
+    (
+        ("lock", "lock", "Lock the front door"),
+        ("lock", "unlock", "Unlock the front door"),
+        ("cover", "open_cover", "Open the garage door"),
+        ("cover", "close_cover", "Close the garage door"),
+    ),
+)
+def test_openai_compatible_fallback_can_select_confirmation_required_action(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    sanitized_discovery: dict[str, Any],
+    domain: str,
+    operation: str,
+    utterance: str,
+) -> None:
+    gateway = _openai_gateway(tmp_path, sanitized_discovery)
+    candidate = _candidate(gateway, domain=domain, operation=operation)
+
+    def urlopen(request, timeout):
+        assert timeout == 8.0
+        payload = json.loads(request.data.decode("utf-8"))
+        bounded_request = json.loads(payload["messages"][1]["content"])
+        offered = bounded_request["choices"]
+        assert len(offered) == 1
+        content = json.dumps({
+            "kind": "tool_proposal",
+            "choice": offered[0]["capability_id"],
+            "text": "",
+            "reason": "the offered unlock capability matches the request",
+            "parameters": {},
+        })
+        return _Response({"choices": [{"message": {"content": content}}]})
+
+    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    result = gateway.process(_request(
+        gateway,
+        candidate,
+        request_id=f"gateway-fallback-confirmation-{domain}-{operation}",
+        utterance=utterance,
+    ))
+
+    assert result.kind.value == "confirm"
+    assert result.response_key == "confirmation_required"
+    assert result.capability_id == candidate["capability_id"]
+    assert result.route_id == "typed-local"
     _assert_safe(result.to_dict())
 
 

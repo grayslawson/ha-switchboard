@@ -335,6 +335,13 @@ rejected. `typed_http` is different: it uses the explicit
 `ha-switchboard-fallback/v1` handoff contract and may be local or hosted
 according to endpoint and privacy policy.
 
+For the generic chat-completions routes, Switchboard first sends the optional
+OpenAI JSON-Schema response hint. If the provider returns HTTP 400 for that
+optional feature, it makes one bounded retry without the hint and still
+requires the same strict JSON response contract. Other transport or HTTP
+failures fail closed and can be routed to another eligible fallback; the
+adapter never accepts provider tool calls or arbitrary service payloads.
+
 Explicit plural on/off requests for exposed lights, switches, and fans can
 select an opaque group of up to 32 members. The request may target the whole
 exposed domain or one unambiguous known area, floor, or label. The Core
@@ -438,6 +445,7 @@ Common log events have these meanings:
 | `profile_reconciled` | Core supplied a complete replacement profile. | Confirm status is `active` before attempting a write. |
 | `profile_stale` / `profile_scan_requested` | A registry change or manual scan invalidated the previous profile. | Wait for the next `profile_reconciled`; do not infer write readiness from capability count alone. |
 | `decision` | A bounded native, Jev, fallback, clarification, or refusal route completed. | Use the route/outcome fields; request bodies and provider text are intentionally absent. |
+| `provider_structured_output_retry` | A compatible chat provider rejected the optional JSON-Schema hint with HTTP 400, so the adapter made its single bounded compatibility retry. | Confirm the provider still returns the documented bounded JSON contract; repeated failures are fail-closed. |
 | `provider_http_error` / `jev_invalid_response` | A configured provider failed transport or did not meet its typed contract. | Check endpoint/provider/privacy-mode compatibility, then retry or use a configured eligible fallback. |
 | `execution` / `verification` | Core executed and checked a proposed action. | Treat the verified count and reason code as authoritative; App logs never contain raw entity IDs. |
 

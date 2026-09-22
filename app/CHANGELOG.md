@@ -10,6 +10,12 @@ and public GitHub release, not by this changelog alone.
 - Coordinates the App, Core integration, Python package, and image metadata for
   the next release candidate after the provider-boundary, release-provenance,
   and preserve-first local-runtime hardening pass.
+- Adds bounded OpenAI-compatible fallback compatibility for providers that
+  reject the optional JSON-schema response hint, while keeping strict
+  Switchboard response validation and opaque capability selection.
+- Fixes the local development rebuild path when Supervisor sees a changed
+  App version, and records the event-driven preserve-first App/Core restart
+  watcher and disposable v0.2.1 Assist canary evidence.
 - Records that the local HA 2026.9 validation environment survives the
   approved App/Core restart sequence without losing its fixtures, config entry,
   gateway token presence, or active profile. Public image, mirror, HACS, and

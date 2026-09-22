@@ -150,7 +150,7 @@ scenarios through a fixture pipeline.
 - [x] T056 [P] [US4] Add parameter schema/range/enum extraction and normalization tests in tests/test_gateway_parameters.py
 - [x] T057 [P] [US4] Add missing, invalid, conflicting, and overflow parameter tests in tests/test_gateway_parameters.py and tests/test_execution.py
 - [x] T058 [P] [US4] Add clarification/confirmation context lifecycle tests in tests/test_conversation_context.py
-- [ ] T059 [US4] Complete live follow-up Assist runtime verification for same conversation, different user, expiry, cancellation, and replay in tests/test_e2e_harness.py (deterministic tests cover user binding/TTL/cancellation/replay; the bounded live probe created and removed a temporary second user, but the configured provider refused or clarified the high-risk fixture instead of producing a confirmation, so provider-dependent live acceptance remains open)
+- [ ] T059 [US4] Complete live follow-up Assist runtime verification for same conversation, different user, expiry, cancellation, and replay in tests/test_e2e_harness.py (deterministic tests cover user binding/TTL/cancellation/replay; the bounded live probe created and removed a temporary second user, while the configured provider refused or clarified the high-risk fixture instead of producing a confirmation. The source-level OpenAI-compatible fallback and Gateway confirmation boundary now pass; installed provider-dependent follow-up acceptance remains open)
 
 ### Implementation for User Story 4
 
@@ -211,7 +211,7 @@ App, and inspect status/revision/write behavior.
 - [x] T081 [P] [US6] Add every registry/exposure/state/reconnect/restart invalidation test in tests/test_change_monitor.py
 - [x] T082 [P] [US6] Add manual-scan authentication, coalescing, progress, failure, and stale-profile tests (implemented in tests/test_manual_scan_acceptance.py with bounded live scan evidence)
 - [x] T083 [P] [US6] Add generation-race, malformed-snapshot, oversized-snapshot, and atomic-replacement tests in tests/test_profile.py and tests/test_adapter_contract.py
-- [ ] T084 [US6] Complete authorized live local startup/scan/restart verification in tools/local-fixtures/local_api.py and tests/test_e2e_harness.py (preserve-first volume identity/profile/fixture guards, startup/scan, and bounded manual App/Core recovery pass; the automated restart-cycle harness still has a one-shot post-App readiness race to fix)
+- [x] T084 [US6] Complete authorized live local startup/scan/restart verification in tools/local-fixtures/local_api.py and tests/test_e2e_harness.py (preserve-first volume identity/profile/fixture guards, startup/scan, and the event-driven App/Core restart cycle now pass; the watcher subscribes before mutation and waits for App `/readyz` or Core HTTP readiness without repeated Supervisor polling)
 
 ### Implementation for User Story 6
 
@@ -358,7 +358,7 @@ all user stories are implemented.
 - [x] T146 Add final App/Core contract compatibility check and version policy in app/config.yaml, custom_components/ha_switchboard/manifest.json, pyproject.toml, and app/ha_switchboard/__init__.py
 - [x] T147 Add final static checks for response-language prohibition, secret redaction, raw-ID boundary, and documentation drift in tests/test_quality_audit.py
 - [ ] T148 Run the complete quickstart acceptance guide and record sanitized evidence in specs/001-ha-switchboard-completeness/quickstart.md (the v0.2.1 source/public-export gates and preserve-first local recovery are recorded in `evidence/local-closeout-2026-09-21.md`; provider confirmation, lifecycle harness, security-enforcement, and external-release portions remain)
-- [ ] T149 Complete source, image, runtime, HACS, Hassfest, mirror, GHCR, and live-canary release gates from specs/001-ha-switchboard-completeness/contracts/release-validation.md (local source/image/runtime/package/workflow gates pass; Hassfest passes on the pinned local export; the fail-closed GHCR provenance verifier is hardened and tested; the mirror workflow now gates App E2E and exact source/tag/commit-marker agreement before publication; external credentials, matching published-artifact provenance, HACS, mirror, multi-architecture, and installed-canary evidence remain)
+- [ ] T149 Complete source, image, runtime, HACS, Hassfest, mirror, GHCR, and live-canary release gates from specs/001-ha-switchboard-completeness/contracts/release-validation.md (local source/image/runtime/package/workflow gates pass; Hassfest passes on the pinned local export; the fail-closed GHCR provenance verifier is hardened and tested; the build/mirror workflows now gate App E2E and exact source/tag/commit-marker agreement before publication with a bounded 120-second GHCR handoff window; external credentials, matching published-artifact provenance, HACS, mirror, multi-architecture, and installed-canary evidence remain)
 - [x] T150 Review all external HACS/App repository/provider dependencies and record pending acceptance separately in docs/RELEASE.md (external acceptance remains a release gate)
 - [ ] T151 Publish the feature-complete release only after protected-master ancestry, public mirror, tag, image digest, architecture, and live App/Core evidence agree in .forgejo/workflows/mirror-public.yml (not yet authorized by evidence because T149 external gates remain open)
 
@@ -480,20 +480,38 @@ all user stories are implemented.
 
 - Reviewed source candidate: coordinated v0.2.1 metadata across the App,
   gateway, Core integration, packaging, and documentation authorities.
-- Full source validation passes: **498 passed, 4 expected skips**. The focused
+- Full source validation passes: **506 passed, 4 expected skips**. The focused
   provider/release/preflight regression slice passes **48 tests**.
 - `check_release_boundary.py --versions`, `check_release_boundary.py
   --quality`, the release boundary check, the
   coordinated source-version check, compilation, shell syntax, and whitespace
   checks all pass.
 - The latest hardening wave adds fail-closed HTTP fallback endpoint/body/
-  response validation, malformed typed-proposal handling, coordinated release
-  version enforcement, exact GHCR index/child/config media-type and digest
-  checks, and a read-only live-gate preflight for T059/T084/T148.
-- T059, T084, T148, T149, and T151 remain unchecked. The bounded local
+  response validation, bounded structured-output compatibility retry,
+  malformed typed-proposal handling, coordinated release version enforcement,
+  exact GHCR index/child/config media-type and digest checks, an event-driven
+  preserve-first restart watcher, and a read-only live-gate preflight for
+  T059/T148.
+- T059, T148, T149, and T151 remain unchecked. The bounded local
   closeout is recorded in `evidence/local-closeout-2026-09-21.md`; this
   snapshot does not claim a public release, tag, image publication, HACS
-  submission, protected-master landing, or installed canary.
+  submission, protected-master landing, or public-image canary. The installed
+  disposable v0.2.1 canary is recorded separately below.
+
+- Latest local acceptance: the preserve-first App/Core restart cycle completed
+  with the existing Supervisor volume, config entry, Conversation agent, 28
+  fixture entities, options, and settled profile unchanged. The local App was
+  updated through Supervisor to source candidate `0.2.1`; its installed
+  low-risk Assist control and bounded multi-device control both completed.
+  This is installed disposable-canary evidence, not public image or AppArmor
+  evidence.
+- Latest provider acceptance: the OpenAI-compatible adapter now retries once
+  without the optional JSON-schema hint after a bounded HTTP 400, accepts only
+  the offered opaque capability ID, and the Gateway confirmation boundary is
+  covered for lock and cover operations. A real provider boundary probe also
+  returned a bounded confirmation result from a sanitized fixture. The
+  installed high-risk follow-up remains open until a configured provider emits
+  the confirmation and the full continuation/expiry matrix is run.
 
 ## Dependencies and Execution Order
 

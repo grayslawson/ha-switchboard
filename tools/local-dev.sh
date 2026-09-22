@@ -502,6 +502,22 @@ sync_integration() {
   echo "Current worktree integration is available at ${LOCAL_CORE_CONFIG_DIR}/custom_components/ha_switchboard." >&2
 }
 
+rebuild_local_app() {
+  local result error_key
+  # Supervisor returns API errors in a successful CLI process, so inspect the
+  # raw result instead of trusting the command exit status. A changed local
+  # config.yaml version is an update operation, not a rebuild operation.
+  result="$(run_in_container sh -lc "ha apps rebuild --force --raw-json '$APP_SLUG'")"
+  error_key="$(printf '%s' "$result" | jq -r '.error_key // empty')"
+  if [[ "$error_key" == "app_rebuild_version_changed_error" ]]; then
+    result="$(run_in_container sh -lc "ha apps update --raw-json '$APP_SLUG'")"
+  fi
+  if [[ "$(printf '%s' "$result" | jq -r '.result // empty')" != "ok" ]]; then
+    echo "Supervisor rejected the local App rebuild/update." >&2
+    return 1
+  fi
+}
+
 sync_stage() {
   command -v rsync >/dev/null 2>&1 || {
     echo "rsync is required for the local Supervisor staging copy" >&2
@@ -588,7 +604,9 @@ case "${1:-help}" in
     }
     sync_stage
     wait_for_supervisor
-    run_in_container sh -lc "ha apps stop '$APP_SLUG' >/dev/null 2>&1 || true; ha apps rebuild --force '$APP_SLUG'; ha apps start '$APP_SLUG'"
+    run_in_container sh -lc "ha apps stop '$APP_SLUG' >/dev/null 2>&1 || true"
+    rebuild_local_app
+    run_in_container sh -lc "ha apps start '$APP_SLUG'"
     wait_for_app_started
     ;;
   e2e)

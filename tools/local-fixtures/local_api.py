@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import asyncio
 import argparse
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import math
 import os
+import select
 import subprocess
 import sys
 import time
@@ -55,10 +57,12 @@ LOCAL_CORE_CONTAINER = "homeassistant"
 LOCAL_APP_SLUG = "local_ha_switchboard"
 LOCAL_SUPERVISOR_PORT = 7123
 LOCAL_SUPERVISOR_VOLUME_DESTINATION = "/mnt/supervisor"
+LOCAL_APP_CONTAINER = f"app_{LOCAL_APP_SLUG}"
 HOST_COMMAND_TIMEOUT_SECONDS = 10
 RESTART_ACTION_TIMEOUT_SECONDS = 30
 RESTART_WAIT_SECONDS = 60
 RESTART_CYCLE_TIMEOUT_SECONDS = 120
+DOCKER_EVENT_CLOCK_SKEW_SECONDS = 5
 
 # Keep this copy deliberately independent of the integration package: this
 # file is executed inside the Core container, where the worktree is absent.
@@ -745,15 +749,177 @@ def startup_check() -> dict:
     }
 
 
-def wait_for_local_component(component: str, *, timeout: float = RESTART_WAIT_SECONDS) -> None:
-    """Check one local Supervisor-managed component once within a deadline.
+def docker_event_timestamp() -> str:
+    """Return a skew-tolerant Docker-compatible UTC event boundary."""
+    boundary = datetime.now(timezone.utc) - timedelta(seconds=DOCKER_EVENT_CLOCK_SKEW_SECONDS)
+    return boundary.isoformat(timespec="microseconds").replace(
+        "+00:00", "Z"
+    )
 
-    Supervisor's restart command is the synchronization boundary for this
-    disposable probe.  A second status read is useful evidence, but retrying
-    it in a loop can turn a failed restart into an unbounded readiness poll.
+
+def start_local_component_event_watch(component: str, *, event_since: str) -> subprocess.Popen[str]:
+    """Start one bounded Docker event stream before a local restart."""
+    if component not in {"app", "core"}:
+        raise RuntimeError(f"unsupported local component: {component}")
+    container = LOCAL_APP_CONTAINER if component == "app" else LOCAL_CORE_CONTAINER
+    command = [
+        "docker", "exec", LOCAL_SUPERVISOR_CONTAINER, "sh", "-c",
+        (
+            "docker events --since \"$1\" --filter \"container=$2\" "
+            "--filter event=start --format '{{.Action}}'"
+        ),
+        "switchboard-event-watch", event_since, container,
+    ]
+    try:
+        return subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
+        )
+    except OSError as exc:
+        raise RuntimeError("could not start the bounded local Docker event watcher") from exc
+
+
+def stop_local_component_event_watch(process: subprocess.Popen[str]) -> None:
+    """Stop a local event watcher without retaining its output."""
+    if process.poll() is None:
+        process.terminate()
+    try:
+        process.communicate(timeout=2)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.communicate(timeout=2)
+
+
+def wait_for_local_component_event(
+    process: subprocess.Popen[str],
+    *,
+    timeout: float,
+) -> None:
+    """Wait for the first event line, then close the watcher."""
+    bounded_wait = bounded_timeout(timeout, RESTART_WAIT_SECONDS)
+    try:
+        if process.stdout is None:
+            raise RuntimeError("local Docker event watcher has no output")
+        ready, _write, _error = select.select([process.stdout], [], [], bounded_wait)
+        if not ready:
+            raise RuntimeError("local start event was not observed within the bounded readiness wait")
+        line = process.stdout.readline().strip()
+        if line != "start":
+            raise RuntimeError("local start event evidence was invalid or missing")
+    finally:
+        stop_local_component_event_watch(process)
+
+
+def wait_for_local_component_readiness(component: str, *, timeout: float) -> None:
+    """Wait for the restarted component's actual HTTP surface once.
+
+    Docker's ``start`` event means the process container exists, not that the
+    service has bound its socket or completed profile/bootstrap work.  The
+    nested target performs one bounded readiness watch after that event; the
+    host harness does not poll Supervisor state or issue repeated status calls.
+    """
+    if component == "app":
+        container = LOCAL_APP_CONTAINER
+        url = "http://127.0.0.1:8099/readyz"
+    elif component == "core":
+        container = LOCAL_CORE_CONTAINER
+        # Any non-5xx response proves that Core's HTTP server is accepting
+        # connections.  /api/ is normally 401 without a token, which is still
+        # the expected proof that the server is ready for authenticated calls.
+        url = "http://127.0.0.1:80/api/"
+    else:
+        raise RuntimeError(f"unsupported local component: {component}")
+    bounded_wait = bounded_timeout(timeout, RESTART_WAIT_SECONDS)
+    readiness_script = (
+        "import time, urllib.error, urllib.request\n"
+        f"url = {url!r}\n"
+        f"deadline = time.monotonic() + {bounded_wait!r}\n"
+        "ready = False\n"
+        "while time.monotonic() < deadline:\n"
+        "    try:\n"
+        "        with urllib.request.urlopen(url, timeout=2) as response:\n"
+        "            ready = response.status < 500\n"
+        "    except urllib.error.HTTPError as error:\n"
+        "        ready = error.code < 500\n"
+        "    except OSError:\n"
+        "        ready = False\n"
+        "    if ready:\n"
+        "        break\n"
+        "    time.sleep(0.25)\n"
+        "raise SystemExit(0 if ready else 1)\n"
+    )
+    try:
+        run_host_command(
+            [
+                "docker", "exec", LOCAL_SUPERVISOR_CONTAINER,
+                "docker", "exec", container,
+                "python3", "-c", readiness_script,
+            ],
+            timeout=bounded_wait,
+        )
+    except RuntimeError:
+        raise RuntimeError(
+            f"local {component} service readiness was not observed within the bounded wait"
+        ) from None
+
+
+def wait_for_local_component(
+    component: str,
+    *,
+    timeout: float = RESTART_WAIT_SECONDS,
+    event_since: str | None = None,
+    event_process: subprocess.Popen[str] | None = None,
+) -> None:
+    """Wait for one component start event, then check Supervisor readiness once.
+
+    When ``event_since`` is supplied, the nested Docker daemon is watched as a
+    single bounded stream.  ``head`` closes the stream after the first matching
+    start event; there is no status polling or sleep loop.  The subsequent
+    Supervisor state read is the readiness check for the event that was seen.
+    Without an event boundary this retains the cheap one-shot read-only check
+    used by startup diagnostics and unit tests.
     """
     if component not in {"app", "core"}:
         raise RuntimeError(f"unsupported local component: {component}")
+    bounded_wait = bounded_timeout(timeout, RESTART_WAIT_SECONDS)
+    wait_deadline = time.monotonic() + bounded_wait
+
+    def remaining_wait() -> float:
+        remaining = wait_deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError(f"local {component} readiness wait exceeded its bounded deadline")
+        return remaining
+
+    if event_process is not None:
+        try:
+            wait_for_local_component_event(event_process, timeout=remaining_wait())
+        except RuntimeError as exc:
+            raise RuntimeError(f"local {component} {exc}") from None
+        wait_for_local_component_readiness(component, timeout=remaining_wait())
+    elif event_since is not None:
+        container = LOCAL_APP_CONTAINER if component == "app" else LOCAL_CORE_CONTAINER
+        event_watch = [
+            "docker", "exec", LOCAL_SUPERVISOR_CONTAINER, "sh", "-c",
+            (
+                "docker events --since \"$1\" --filter \"container=$2\" "
+                "--filter event=start --format '{{.Action}}' | head -n 1"
+            ),
+            "switchboard-event-watch", event_since, container,
+        ]
+        try:
+            event_output = run_host_command(event_watch, timeout=remaining_wait())
+        except RuntimeError:
+            raise RuntimeError(
+                f"local {component} start event was not observed within the bounded readiness wait"
+            ) from None
+        if not any(line.strip() == "start" for line in event_output.splitlines()):
+            raise RuntimeError(
+                f"local {component} start event evidence was invalid or missing"
+            )
+        wait_for_local_component_readiness(component, timeout=remaining_wait())
     command = [
         "docker", "exec", LOCAL_SUPERVISOR_CONTAINER,
         "ha", "apps", "info", "--raw-json", LOCAL_APP_SLUG,
@@ -763,14 +929,22 @@ def wait_for_local_component(component: str, *, timeout: float = RESTART_WAIT_SE
     ]
     output = run_host_command(
         command,
-        timeout=min(HOST_COMMAND_TIMEOUT_SECONDS, bounded_timeout(timeout, RESTART_WAIT_SECONDS)),
+        timeout=min(HOST_COMMAND_TIMEOUT_SECONDS, remaining_wait()),
     )
     try:
         payload = json.loads(output)
-        state = payload["data"]["state"]
+        data = payload["data"]
+        state = data.get("state") if isinstance(data, dict) else None
     except (KeyError, TypeError, json.JSONDecodeError):
         raise RuntimeError(f"local {component} readiness evidence was invalid") from None
     expected = "started" if component == "app" else "running"
+    if payload.get("result") != "ok":
+        raise RuntimeError(f"local {component} readiness evidence was invalid")
+    # Current Supervisor omits Core's lifecycle state from ``ha core info``.
+    # The preceding bounded HTTP watcher is the authoritative Core readiness
+    # proof in that shape; older wrappers may still include data.state.
+    if component == "core" and state is None:
+        return
     if state != expected:
         raise RuntimeError(f"local {component} was not ready after the bounded restart check")
 
@@ -831,11 +1005,23 @@ def restart_cycle(*, allow_restart: bool) -> dict:
             raise RuntimeError("local restart cycle exceeded its bounded deadline")
         return min(maximum, seconds)
 
-    run_host_command(
-        ["docker", "exec", LOCAL_SUPERVISOR_CONTAINER, "ha", "apps", "restart", LOCAL_APP_SLUG],
-        timeout=remaining(RESTART_ACTION_TIMEOUT_SECONDS),
+    app_restart_event_since = docker_event_timestamp()
+    app_event_process = start_local_component_event_watch(
+        "app", event_since=app_restart_event_since
     )
-    wait_for_local_component("app", timeout=remaining(RESTART_WAIT_SECONDS))
+    try:
+        run_host_command(
+            ["docker", "exec", LOCAL_SUPERVISOR_CONTAINER, "ha", "apps", "restart", LOCAL_APP_SLUG],
+            timeout=remaining(RESTART_ACTION_TIMEOUT_SECONDS),
+        )
+        wait_for_local_component(
+            "app",
+            timeout=remaining(RESTART_WAIT_SECONDS),
+            event_since=app_restart_event_since,
+            event_process=app_event_process,
+        )
+    finally:
+        stop_local_component_event_watch(app_event_process)
     after_app_target = inspect_local_supervisor()
     if not target_identity_is_verified(after_app_target) or safe_target_evidence(after_app_target) != safe_target_evidence(target):
         raise RuntimeError("Refusing to continue after local Supervisor volume identity changed")
@@ -855,21 +1041,33 @@ def restart_cycle(*, allow_restart: bool) -> dict:
             "Local App restart did not preserve config entry and fixture anchors; settled profile missing"
         )
 
-    core_restart_output = run_host_command(
-        ["docker", "exec", LOCAL_SUPERVISOR_CONTAINER, "ha", "core", "restart", "--raw-json"],
-        timeout=remaining(RESTART_ACTION_TIMEOUT_SECONDS),
+    core_restart_event_since = docker_event_timestamp()
+    core_event_process = start_local_component_event_watch(
+        "core", event_since=core_restart_event_since
     )
-    # Supervisor normally returns JSON for --raw-json.  Keep compatibility
-    # with wrappers that intentionally suppress successful stdout, but reject
-    # any non-empty malformed or unsuccessful response.
-    if core_restart_output.strip():
-        try:
-            core_restart_result = json.loads(core_restart_output)
-        except json.JSONDecodeError:
-            raise RuntimeError("Local Core restart returned invalid bounded evidence") from None
-        if not isinstance(core_restart_result, dict) or core_restart_result.get("result") != "ok":
-            raise RuntimeError("Local Core restart did not report success")
-    wait_for_local_component("core", timeout=remaining(RESTART_WAIT_SECONDS))
+    try:
+        core_restart_output = run_host_command(
+            ["docker", "exec", LOCAL_SUPERVISOR_CONTAINER, "ha", "core", "restart", "--raw-json"],
+            timeout=remaining(RESTART_ACTION_TIMEOUT_SECONDS),
+        )
+        # Supervisor normally returns JSON for --raw-json.  Keep compatibility
+        # with wrappers that intentionally suppress successful stdout, but reject
+        # any non-empty malformed or unsuccessful response.
+        if core_restart_output.strip():
+            try:
+                core_restart_result = json.loads(core_restart_output)
+            except json.JSONDecodeError:
+                raise RuntimeError("Local Core restart returned invalid bounded evidence") from None
+            if not isinstance(core_restart_result, dict) or core_restart_result.get("result") != "ok":
+                raise RuntimeError("Local Core restart did not report success")
+        wait_for_local_component(
+            "core",
+            timeout=remaining(RESTART_WAIT_SECONDS),
+            event_since=core_restart_event_since,
+            event_process=core_event_process,
+        )
+    finally:
+        stop_local_component_event_watch(core_event_process)
     after_target = inspect_local_supervisor()
     if not target_identity_is_verified(after_target) or safe_target_evidence(after_target) != safe_target_evidence(target):
         raise RuntimeError("Refusing to report success after local Supervisor volume identity changed")

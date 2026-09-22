@@ -10,26 +10,27 @@ delete the Home Assistant volume. See the sanitized closeout record for the
 commands and results.
 
 **T148 evidence status (2026-09-21): partial.** This quickstart is not a
-complete live Supervisor/App/Core acceptance run. Its commands and matrix
-define required evidence; they do not claim that every fixture scenario,
-live provider path, or release canary succeeded. The current sanitized
-closeout is recorded in `evidence/local-closeout-2026-09-21.md`, alongside
-the earlier local records. The status remains partial for the provider
-confirmation scenario, the harness restart-cycle race, external security
-enforcement, and release gates. The current source metadata agrees on App/Core
-version `0.2.1`, but that is source evidence, not installed or published-
-artifact proof.
+complete public release acceptance run. Its commands and matrix define
+required evidence; they do not claim that every fixture scenario, live
+provider path, or release canary succeeded. The current sanitized closeout is
+recorded in `evidence/local-closeout-2026-09-21.md`, alongside the earlier
+local records. The local provider boundary, preserve-first restart cycle, and
+installed v0.2.1 disposable canary now pass. The status remains partial for
+the provider-dependent high-risk follow-up, AppArmor enforcement on this WSL
+host, and the external publication gates.
 
-The current source-level run for candidate `0.2.1` was `498 passed, 4
+The current source-level run for candidate `0.2.1` was `506 passed, 4
 skipped`.
 The tracked credential-free `tools/standalone-smoke.sh` is now included in
 the public export allowlist and the export regression check passes. External
 T149 gates remain open.
 The skips are the unavailable host ConversationEntity/config-flow dependencies
-and two explicitly opt-in live fixture probes. The approved App/Core restart
-attempt encountered a one-shot post-App readiness race; bounded recovery then
-passed without changing the Supervisor/Core volume or fixture set. The
-automated restart-cycle harness still needs a readiness-boundary fix.
+and two explicitly opt-in live fixture probes. The authorized App/Core
+restart-cycle harness now subscribes before mutation and waits for actual App
+or Core service readiness. The cycle passed without changing the
+Supervisor/Core volume or fixture set. The installed local App was refreshed
+to v0.2.1 and completed both a low-risk control and a bounded two-device
+Assist canary.
 
 The preserved local Supervisor harness was checked read-only on this date:
 `local_api.py startup` reported `mode=read_only`, `ready=true`, the existing
@@ -240,14 +241,13 @@ full provider responses in the evidence record.
 
 ## Observed source evidence for this pass
 
-- Worktree: `codex/fix-apparmor-runtime`, current `HEAD`
-  `2c2424b44e5a28f6d8f4b18368f71987002d2fa`. External publication gates
-  remain open.
+- Worktree: `codex/fix-apparmor-runtime`, current candidate with the validation
+  hardening in this closeout. External publication gates remain open.
 - Coordinated source version: `0.2.1` in the App config/image metadata, gateway
   package, Core manifest, and changelog.
 - Current local source checks: `python3 -m compileall -q
   app/ha_switchboard custom_components/ha_switchboard tools tests` passed;
-  `python3 -m pytest -q tests` passed (`498 passed, 4 skipped`); and
+  `python3 -m pytest -q tests` passed (`506 passed, 4 skipped`); and
   `python3 tools/check_release_boundary.py --quality` passed. The current
   skips are the unavailable host ConversationEntity/config-flow dependencies
   and two opt-in live fixture probes. `git diff --check` is clean for the
@@ -258,23 +258,20 @@ full provider responses in the evidence record.
   not HACS, public-mirror, GHCR, or release proof.
 - The preserve-first runtime guards verify Docker volume identity and
   settled-profile invariants before an explicitly authorized restart. The
-  protected restart attempt and bounded recovery are recorded in
-  `evidence/local-closeout-2026-09-21.md`; the harness's post-App readiness
-  race remains an implementation task.
+  successful event-driven App/Core restart cycle is recorded in
+  `evidence/local-closeout-2026-09-21.md`.
 - Local runtime evidence already recorded above remains disposable-harness
-  evidence only. This pass performed a preserve-first App-only rebuild, a
-  read-only startup check, a repeatable native Assist check, and a read-only
-  restart-cycle inspection; it did not run the opt-in Core/App restart cycle.
+  evidence only. This pass performed a preserve-first App update to v0.2.1,
+  a read-only startup check, low-risk and multi-device Assist canaries, and
+  the explicitly authorized event-driven App/Core restart cycle.
 
 The exact gates still open are the provider-dependent live portions of T059,
-the automated lifecycle portion of T084, the complete T148 quickstart, and
-T149/T151 publication and canary evidence. That includes a confirmation-
-producing Jev/fallback canary, natural-TTL follow-up, the harness readiness
-fix and repeatable protected App/Core restart cycle, installed AppArmor
-enforcement, HACS, public mirror/tag/release agreement, GHCR immutable
-multi-architecture provenance, and installed update/restart/rollback/canary
-evidence. Local metadata, tests, a fixture, or a local image cannot close any
-of those external gates.
+the complete T148 quickstart, and T149/T151 publication and canary evidence.
+That includes a confirmation-producing installed Jev/fallback follow-up,
+natural-TTL follow-up, installed AppArmor enforcement, HACS, public
+mirror/tag/release agreement, GHCR immutable multi-architecture provenance,
+and installed rollback evidence. Local metadata, tests, a fixture, or a local
+image cannot close any of those external gates.
 
 All fixture, local App-image, and E2E output is sanitized disposable-harness
 evidence. It must not be presented as proof of a public release, HACS/App

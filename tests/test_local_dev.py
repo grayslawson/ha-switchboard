@@ -180,11 +180,15 @@ def test_rebuild_updates_the_existing_app_without_recreating_core() -> None:
     assert "sync_stage" in rebuild
     assert "wait_for_supervisor" in rebuild
     assert "ha apps stop '$APP_SLUG'" in rebuild
-    assert "ha apps rebuild --force '$APP_SLUG'" in rebuild
+    assert "rebuild_local_app" in rebuild
     assert "ha apps start '$APP_SLUG'" in rebuild
     assert "remove_devcontainer" not in rebuild
     assert "docker volume rm" not in rebuild
     assert "ha core restart" not in rebuild
+
+    assert "ha apps rebuild --force --raw-json '$APP_SLUG'" in text
+    assert "ha apps update --raw-json '$APP_SLUG'" in text
+    assert "app_rebuild_version_changed_error" in text
 
 
 def test_update_path_refreshes_store_and_preserves_existing_installation() -> None:

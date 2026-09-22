@@ -90,7 +90,8 @@ def test_release_publication_requires_static_and_external_metadata_evidence() ->
     assert "hassfest@sha256" in mirror
     assert "hacs/action@sha256" in mirror
     assert "sleep 10" in mirror
-    assert "for attempt in {1..3}" in mirror
+    assert "for attempt in {1..12}" in mirror
+    assert "within 120 seconds" in mirror
 
 
 def test_release_workflows_use_exact_source_revision_and_release_paths() -> None:
@@ -146,7 +147,7 @@ def test_build_revision_provenance_uses_one_checked_revision_and_bounded_readbac
     assert "printf 'revision=%s\\n' \"$source_revision\" >> \"$FORGEJO_OUTPUT\"" in build
     assert '--build-arg "BUILD_REVISION=${REVISION}"' in build
     assert '--revision "$REVISION"' in build
-    assert "for attempt in {1..3}; do" in build
+    assert "for attempt in {1..12}; do" in build
     assert "sleep 10" in build
 
 

@@ -50,10 +50,10 @@ def test_mirror_release_probe_is_bounded_without_changing_outer_e2e_timeout() ->
     e2e_start = text.index("Run bounded App image E2E gate before tag publication")
     probe = text[probe_start:e2e_start]
 
-    assert "for attempt in {1..3}; do" in probe
+    assert "for attempt in {1..12}; do" in probe
     assert "for attempt in {1..18}; do" not in probe
-    assert 'if [ "$attempt" -eq 3 ]; then' in probe
-    assert "matching App image was not published within 30 seconds" in probe
+    assert 'if [ "$attempt" -eq 12 ]; then' in probe
+    assert "matching App image was not published within 120 seconds" in probe
     assert "sleep 10" in probe
     assert "timeout --kill-after=10s 300s bash tools/app-image-e2e.sh" in text
 

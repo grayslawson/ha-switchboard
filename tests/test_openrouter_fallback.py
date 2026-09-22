@@ -92,6 +92,47 @@ def test_openai_compatible_fallback_can_return_bounded_typed_parameters(monkeypa
     assert result["proposals"][0]["parameters"] == {"brightness": 42}
 
 
+def test_openai_compatible_fallback_retries_without_optional_schema_on_http_400(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = []
+
+    def urlopen(request_obj, timeout):
+        payload = json.loads(request_obj.data)
+        calls.append(payload)
+        if len(calls) == 1:
+            raise urllib.error.HTTPError(request_obj.full_url, 400, "unsupported response format", {}, None)
+        assert "response_format" not in payload
+        return _Response({"choices": [{"message": {"content": (
+            "```json\n"
+            '{"kind":"tool_proposal","choice":"cap-light-a","text":"",'
+            '"reason":"matched","parameters":{}}\n'
+            "```"
+        )}}]})
+
+    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    result = OpenRouterFallbackAdapter().invoke(None, _request())
+
+    assert len(calls) == 2
+    assert "response_format" in calls[0]
+    assert result["proposals"][0]["capability_id"] == "cap-light-a"
+
+
+def test_openai_compatible_fallback_normalizes_echoed_choice_object(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        lambda *_args, **_kwargs: _Response({"choices": [{"message": {"content": json.dumps({
+            "kind": "tool_proposal",
+            "choice": {"capability_id": "cap-light-a", "name": "echoed metadata"},
+            "text": None,
+            "reason": "matched",
+            "parameters": {},
+        })}}]}),
+    )
+
+    result = OpenRouterFallbackAdapter().invoke(None, _request())
+
+    assert result["proposals"][0]["capability_id"] == "cap-light-a"
+
+
 def test_prose_response_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "urllib.request.urlopen",

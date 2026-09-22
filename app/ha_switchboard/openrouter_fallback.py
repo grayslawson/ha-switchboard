@@ -151,24 +151,50 @@ class OpenAICompatibleFallbackAdapter:
             self._seen_handoffs.append(seen_key)
 
         choices = self._choices(request)
-        payload = self._request_payload(request, choices)
-        body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-        if len(body) > MAX_REQUEST_BYTES:
-            raise OpenRouterFallbackInvalidResponse("fallback request is too large")
         key = self.api_key if self.api_key is not None else os.environ.get(self.api_key_env, "")
         if len(key) > MAX_API_KEY:
             raise OpenRouterFallbackError("fallback API key is too long")
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         if key:
             headers["Authorization"] = f"Bearer {key}"
-        try:
-            raw = _read_provider_response(
+
+        def send(payload: Mapping[str, Any]) -> bytes:
+            body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+            if len(body) > MAX_REQUEST_BYTES:
+                raise OpenRouterFallbackInvalidResponse("fallback request is too large")
+            return _read_provider_response(
                 urllib.request.Request(self.endpoint, data=body, headers=headers, method="POST"),
                 timeout=self.timeout,
             )
+
+        payload = self._request_payload(request, choices)
+        try:
+            raw = send(payload)
         except urllib.error.HTTPError as exc:
-            _LOG.warning("event=provider_http_error provider=openai_compatible status=%d", exc.code)
-            raise OpenRouterFallbackUnavailable("OpenAI-compatible fallback request failed") from exc
+            if exc.code != 400:
+                _LOG.warning("event=provider_http_error provider=openai_compatible status=%d", exc.code)
+                raise OpenRouterFallbackUnavailable("OpenAI-compatible fallback request failed") from exc
+            # OpenAI-compatible services are not required to implement the
+            # optional JSON Schema response format. A bounded retry without
+            # that hint preserves compatibility while the parser below still
+            # accepts only the small Switchboard response contract.
+            _LOG.info(
+                "event=provider_structured_output_retry provider=openai_compatible reason=http_400"
+            )
+            try:
+                raw = send(self._request_payload(request, choices, include_response_format=False))
+            except urllib.error.HTTPError as retry_exc:
+                _LOG.warning(
+                    "event=provider_http_error provider=openai_compatible status=%d",
+                    retry_exc.code,
+                )
+                raise OpenRouterFallbackUnavailable("OpenAI-compatible fallback request failed") from retry_exc
+            except (urllib.error.URLError, TimeoutError, socket.timeout, OSError) as retry_exc:
+                _LOG.warning(
+                    "event=provider_transport_error provider=openai_compatible error_type=%s",
+                    type(retry_exc).__name__,
+                )
+                raise OpenRouterFallbackUnavailable("OpenAI-compatible fallback request failed") from retry_exc
         except (urllib.error.URLError, TimeoutError, socket.timeout, OSError) as exc:
             _LOG.warning("event=provider_transport_error provider=openai_compatible error_type=%s", type(exc).__name__)
             raise OpenRouterFallbackUnavailable("OpenAI-compatible fallback request failed") from exc
@@ -192,6 +218,9 @@ class OpenAICompatibleFallbackAdapter:
             if not isinstance(content, str) or not content.strip():
                 raise TypeError("completion content is not text")
             stripped = content.strip()
+            if stripped.startswith("```") and stripped.endswith("```"):
+                lines = stripped.splitlines()
+                stripped = "\n".join(lines[1:-1]).strip()
             if stripped.startswith(("{", "[")):
                 result = json.loads(stripped)
             else:
@@ -233,7 +262,13 @@ class OpenAICompatibleFallbackAdapter:
                 result[capability_id]["parameter_schema"] = parameter_schema
         return result
 
-    def _request_payload(self, request: HandoffRequest, choices: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
+    def _request_payload(
+        self,
+        request: HandoffRequest,
+        choices: Mapping[str, Mapping[str, Any]],
+        *,
+        include_response_format: bool = True,
+    ) -> dict[str, Any]:
         schema = {
             "type": "object",
             "additionalProperties": False,
@@ -257,27 +292,33 @@ class OpenAICompatibleFallbackAdapter:
                 "bounded_context": list(request.bounded_context),
             }
         )
-        return {
+        payload = {
             "model": self.model,
             "messages": [
                 {
                     "role": "system",
                     "content": (
-                        "You are a bounded Home Assistant fallback. Select one offered choice only, "
-                        "or return concise prose. Never invent IDs, call tools, emit service JSON, "
-                        "or claim an action was executed. For unsupported or ambiguous requests use prose."
+                        "You are a bounded Home Assistant fallback. Return exactly one JSON object and "
+                        "no Markdown. Use kind=tool_proposal with one offered choice and parameters, "
+                        "or kind=prose_response with choice=null and concise text. Include kind, choice, "
+                        "text, reason, and parameters in every response. The choice field must be the "
+                        "offered capability_id string, never an object. Select only an offered choice. "
+                        "Never invent IDs, call tools, emit service JSON, or claim an action was executed. "
+                        "For unsupported or ambiguous requests use prose."
                     ),
                 },
                 {"role": "user", "content": json.dumps(safe, separators=(",", ":"))},
             ],
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": {"name": "ha_switchboard_fallback", "strict": True, "schema": schema},
-            },
             "max_tokens": self.max_tokens,
             "temperature": 0,
             "stream": False,
         }
+        if include_response_format:
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": "ha_switchboard_fallback", "strict": True, "schema": schema},
+            }
+        return payload
 
     @staticmethod
     def _response(
@@ -300,6 +341,12 @@ class OpenAICompatibleFallbackAdapter:
         if kind != ResponseKind.TOOL_PROPOSAL.value:
             raise OpenRouterFallbackInvalidResponse("fallback response kind is invalid")
         choice = result.get("choice")
+        # Some compatible models echo the selected choice object even when
+        # prompted for its opaque string ID. Accept only the offered
+        # capability_id and discard every other echoed field; the proposal's
+        # parameters are still taken solely from the bounded top-level field.
+        if isinstance(choice, Mapping):
+            choice = choice.get("capability_id")
         if not isinstance(choice, str) or choice not in choices:
             raise OpenRouterFallbackInvalidResponse("fallback selected an unoffered choice")
         reason = result.get("reason", "fallback selection")

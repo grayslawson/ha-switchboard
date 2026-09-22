@@ -212,7 +212,10 @@ jobs:
           else
             published_tag=latest
           fi
-          for attempt in {1..3}; do
+          # GHCR may expose the index before all child manifests and the
+          # config blob are readable. Keep this bounded, but give the registry
+          # a full two minutes to complete immutable publication.
+          for attempt in {1..12}; do
             if python3 tools/verify-ghcr-image.py \
               --image "${IMAGE}" \
               --tag "$published_tag" \
@@ -221,8 +224,8 @@ jobs:
               2>"$RUNNER_TEMP/ghcr-publish-verify-error.log"; then
               break
             fi
-            if [ "$attempt" -eq 3 ]; then
-              echo "published multi-architecture image did not become readable within 30 seconds" >&2
+            if [ "$attempt" -eq 12 ]; then
+              echo "published multi-architecture image did not become readable within 120 seconds" >&2
               tail -n 4 "$RUNNER_TEMP/ghcr-publish-verify-error.log" >&2
               exit 1
             fi

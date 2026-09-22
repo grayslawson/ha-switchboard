@@ -554,7 +554,7 @@ def test_restart_readiness_check_is_one_shot_and_bounded(monkeypatch) -> None:
 
     def fake_run(args, *, timeout, **kwargs):
         calls.append((args, timeout))
-        return '{"data":{"state":"running"}}'
+        return '{"result":"ok","data":{"state":"running"}}'
 
     def fail_sleep(_seconds):
         nonlocal slept
@@ -572,6 +572,66 @@ def test_restart_readiness_check_is_one_shot_and_bounded(monkeypatch) -> None:
     assert slept is False
 
 
+def test_restart_readiness_waits_on_one_bounded_start_event_then_reads_state(monkeypatch) -> None:
+    api = _fixture_api()
+    calls: list[tuple[list[str], float]] = []
+    slept = False
+
+    def fake_run(args, *, timeout, **kwargs):
+        calls.append((args, timeout))
+        if any("docker events" in arg for arg in args):
+            return "start\n"
+        return '{"result":"ok","data":{"state":"started"}}'
+
+    def fail_sleep(_seconds):
+        nonlocal slept
+        slept = True
+        raise AssertionError("restart readiness must be event-driven")
+
+    monkeypatch.setattr(api, "run_host_command", fake_run)
+    monkeypatch.setattr(api.time, "sleep", fail_sleep)
+
+    api.wait_for_local_component("app", timeout=999, event_since="2026-09-21T23:00:00.000000Z")
+
+    assert len(calls) == 3
+    event_args, event_timeout = calls[0]
+    assert event_args[:4] == ["docker", "exec", api.LOCAL_SUPERVISOR_CONTAINER, "sh"]
+    assert any("docker events" in arg for arg in event_args)
+    assert event_args[-2:] == ["2026-09-21T23:00:00.000000Z", api.LOCAL_APP_CONTAINER]
+    assert 0 < event_timeout <= api.RESTART_WAIT_SECONDS
+    readiness_args, readiness_timeout = calls[1]
+    assert readiness_args[:6] == [
+        "docker", "exec", api.LOCAL_SUPERVISOR_CONTAINER,
+        "docker", "exec", api.LOCAL_APP_CONTAINER,
+    ]
+    assert readiness_args[-2] == "-c"
+    assert "/readyz" in readiness_args[-1]
+    assert 0 < readiness_timeout <= event_timeout
+    assert calls[2][0][-5:] == ["ha", "apps", "info", "--raw-json", api.LOCAL_APP_SLUG]
+    assert calls[2][1] == api.HOST_COMMAND_TIMEOUT_SECONDS
+    assert slept is False
+
+
+def test_restart_readiness_rejects_missing_start_event_without_state_poll(monkeypatch) -> None:
+    api = _fixture_api()
+    calls: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return ""
+
+    monkeypatch.setattr(api, "run_host_command", fake_run)
+
+    with pytest.raises(RuntimeError, match="start event evidence was invalid or missing"):
+        api.wait_for_local_component(
+            "core",
+            event_since="2026-09-21T23:00:00.000000Z",
+        )
+
+    assert len(calls) == 1
+    assert any("docker events" in arg for arg in calls[0])
+
+
 def test_restart_readiness_rejects_invalid_or_unready_one_shot_evidence(monkeypatch) -> None:
     api = _fixture_api()
 
@@ -579,7 +639,7 @@ def test_restart_readiness_rejects_invalid_or_unready_one_shot_evidence(monkeypa
     with pytest.raises(RuntimeError, match="readiness evidence was invalid"):
         api.wait_for_local_component("app")
 
-    monkeypatch.setattr(api, "run_host_command", lambda *args, **kwargs: '{"data":{"state":"stopped"}}')
+    monkeypatch.setattr(api, "run_host_command", lambda *args, **kwargs: '{"result":"ok","data":{"state":"stopped"}}')
     with pytest.raises(RuntimeError, match="was not ready"):
         api.wait_for_local_component("app")
 
