@@ -1,0 +1,34 @@
+{
+  "local-reasoner": {
+    "kind": "prose_response",
+    "handoff_id": "handoff-fixture",
+    "text": "Check the current humidity sensor and confirm the dehumidifier is running."
+  },
+  "invalid-service-json": {
+    "kind": "tool_proposal",
+    "handoff_id": "handoff-fixture",
+    "service": "light.turn_on",
+    "service_data": {"entity_id": "light.secret"}
+  },
+  "typed-http-prose": {
+    "contract": "ha-switchboard-fallback/v1",
+    "route_id": "typed-local",
+    "handoff_id": "handoff-fixture",
+    "kind": "prose_response",
+    "text": "The request needs a little more detail."
+  },
+  "typed-http-proposal": {
+    "contract": "ha-switchboard-fallback/v1",
+    "route_id": "typed-local",
+    "handoff_id": "handoff-fixture",
+    "kind": "tool_proposal",
+    "proposals": [
+      {
+        "capability_id": "cap-opaque",
+        "parameter_refs": [],
+        "parameters": {"brightness": 50},
+        "reason": "bounded match"
+      }
+    ]
+  }
+}

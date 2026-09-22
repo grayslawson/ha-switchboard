@@ -1,0 +1,42 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect HA Switchboard",
+        "description": "Enter the discovered gateway URL (or the App host and port) and the same gateway token configured in the HA Switchboard App. Supervisor ingress authenticates the Web UI separately.",
+        "data": {
+          "gateway_url": "Gateway URL",
+          "gateway_token": "Gateway token"
+        }
+      },
+      "confirm": {
+        "title": "Confirm HA Switchboard",
+        "description": "Connect to {gateway_url}. Home Assistant Core will maintain a redacted capability profile; the App must still reconcile it before control requests are ready.",
+        "data": {
+          "confirm": "Connect"
+        }
+      },
+      "hassio_confirm": {
+        "title": "Discovered HA Switchboard",
+        "description": "Supervisor discovered a gateway at {gateway_url}. Validate it and let Home Assistant Core maintain its redacted capability profile?",
+        "data": {
+          "confirm": "Use discovered gateway"
+        }
+      }
+    },
+    "error": {
+      "invalid_url": "Enter a valid HTTP or HTTPS gateway URL.",
+      "cannot_connect": "Could not connect to the gateway. Check that the App is running, the URL is correct, and the integration uses the same gateway token as the App."
+    },
+    "abort": {
+      "already_configured": "This HA Switchboard gateway is already configured.",
+      "invalid_discovery": "The discovered gateway information is incomplete or invalid.",
+      "user_cancelled": "Setup was cancelled."
+    }
+  },
+ "conversation": {
+   "agent": {
+      "done": "Done"
+   }
+ }
+}

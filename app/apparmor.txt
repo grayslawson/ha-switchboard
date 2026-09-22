@@ -1,0 +1,59 @@
+#include <tunables/global>
+
+profile ha_switchboard flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+  #include <abstractions/python>
+
+  capability net_bind_service,
+  capability chown,
+  capability setgid,
+  capability setuid,
+  network inet stream,
+  network inet dgram,
+  network inet6 stream,
+  network inet6 dgram,
+
+  # The container entrypoint is a shell script. These rules are required even
+  # though the image runs as an unprivileged user: AppArmor is evaluated before
+  # the shell can read the script, which otherwise surfaces as
+  # "/bin/sh: can't open '/run.sh': Permission denied".
+  /run.sh rix,
+  /bin/sh rix,
+  /bin/busybox rix,
+  /usr/local/bin/python3 rix,
+  /usr/local/bin/python3.* rix,
+  # Alpine's dynamic loader, libpython, and Python extension modules live in
+  # these read-only runtime trees. The `m` permission is required for ELF
+  # shared-library memory mappings; without it AppArmor reports misleading
+  # "library not found" and relocation errors from the musl loader.
+  /lib/ r,
+  /lib/** mr,
+  /usr/lib/ r,
+  /usr/lib/** mr,
+  /usr/local/lib/ r,
+  /usr/local/lib/** mr,
+  # Application source and data are imported/read by the already-authorized
+  # Python interpreter; they are not executable entrypoints.  Keeping this
+  # read-only avoids turning a writable application path into an AppArmor
+  # execution transition.
+  /app/ r,
+  /app/** r,
+  # Python's extension modules are loaded from the immutable image layer;
+  # allow executable memory mappings without granting write or path execute
+  # permission to application data.
+  /usr/local/lib/python3.12/ r,
+  /usr/local/lib/python3.12/** mr,
+  /data/ rw,
+  /data/** rwk,
+  /etc/** r,
+  /proc/** r,
+  /sys/** r,
+  /tmp/** rw,
+
+  deny /root/** rwklx,
+  deny /home/** rwklx,
+  deny /config/** rwklx,
+  deny /ssl/** rwklx,
+  deny /share/** rwklx,
+  deny /media/** rwklx,
+}

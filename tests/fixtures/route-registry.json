@@ -1,0 +1,25 @@
+{
+  "revision": "routes-fixture-1",
+  "routes": [
+    {
+      "route_id": "local-reasoner",
+      "kind": "local_endpoint",
+      "response_kinds": ["prose_response", "tool_proposal"],
+      "complexity_ceiling": "reasoning",
+      "privacy_modes": ["local_only", "jev_hosted_allowed", "hosted_allowed"],
+      "latency_budget_ms": 2000,
+      "cost_ceiling": 0,
+      "availability": "ready"
+    },
+    {
+      "route_id": "capable-hosted",
+      "kind": "openai_compatible",
+      "response_kinds": ["prose_response"],
+      "complexity_ceiling": "reasoning",
+      "privacy_modes": ["hosted_allowed"],
+      "latency_budget_ms": 5000,
+      "cost_ceiling": 0.02,
+      "availability": "ready"
+    }
+  ]
+}
