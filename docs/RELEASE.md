@@ -224,9 +224,13 @@ Forgejo commit SHA, protected-master ancestry result, semantic version, image
 reference and immutable digest, `amd64` and `arm64` manifest entries, and OCI
 source/revision labels. Compare the GHCR result with the exact source revision
 using `tools/verify-ghcr-image.py`; a successful local build or a mutable
-`latest` tag is not enough. Then record the public mirror ref, GitHub tag and
-Release, and package-to-repository association separately. Missing, stale, or
-unreadable external metadata is a failed gate, not a reason to infer success.
+`latest` tag is not enough. The verifier checks a registry-provided
+`Docker-Content-Digest` when present and hashes the exact response bytes when a
+registry such as GHCR omits that optional blob header; either path must match
+the manifest's immutable config descriptor. Then record the public mirror ref,
+GitHub tag and Release, and package-to-repository association separately.
+Missing, stale, or unreadable external metadata is a failed gate, not a reason
+to infer success.
 
 ## Live-canary evidence
 

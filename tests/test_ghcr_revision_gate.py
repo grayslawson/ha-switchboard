@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+from io import BytesIO
 from pathlib import Path
 
 import pytest
@@ -87,6 +88,30 @@ def test_release_image_gate_requires_both_platforms_at_exact_revision() -> None:
         SOURCE_URL,
         "forgejo-commit-1",
     ) == IMAGE_DIGEST
+
+
+def test_registry_json_hashes_body_when_registry_omits_digest_header(monkeypatch) -> None:
+    body = b'{"config":{"Labels":{}}}'
+
+    class Response(BytesIO):
+        headers = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            self.close()
+
+    monkeypatch.setattr(MODULE.urllib.request, "urlopen", lambda *_args, **_kwargs: Response(body))
+    registry = object.__new__(MODULE.Registry)
+    registry.registry = "ghcr.io"
+    registry.repository = "grayslawson/ha-switchboard"
+    registry.token = "redacted-test-token"
+
+    payload, digest = registry.json("/v2/grayslawson/ha-switchboard/blobs/test", "application/json")
+
+    assert payload == {"config": {"Labels": {}}}
+    assert digest == "sha256:" + MODULE.hashlib.sha256(body).hexdigest()
 
 
 def test_release_image_gate_rejects_stale_image_revision() -> None:

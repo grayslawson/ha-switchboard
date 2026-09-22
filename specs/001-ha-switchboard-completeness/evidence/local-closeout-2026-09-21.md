@@ -6,7 +6,7 @@ entity identifiers, utterances, or provider response bodies.
 
 ## Source and packaging gates
 
-- `python3 -m pytest -q`: **511 passed, 4 skipped**. The skips are the
+- `python3 -m pytest -q`: **512 passed, 4 skipped**. The skips are the
   unavailable host ConversationEntity/config-flow dependencies and the two
   explicitly opt-in live fixture probes.
 - `python3 tools/check_release_boundary.py --versions`: **PASS**.

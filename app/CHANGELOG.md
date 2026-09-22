@@ -20,6 +20,9 @@ and public GitHub release, not by this changelog alone.
   confirmation continuations, avoiding nested profile-state failures while
   preserving the same-conversation confirmation, cancellation, and one-shot
   replay checks.
+- Makes GHCR provenance verification compatible with registries that omit the
+  optional blob digest header by hashing the exact response bytes, while still
+  rejecting any supplied digest header that disagrees with the descriptor.
 - Fixes the local development rebuild path when Supervisor sees a changed
   App version, and records the event-driven preserve-first App/Core restart
   watcher and disposable v0.2.1 Assist canary evidence.

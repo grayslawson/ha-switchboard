@@ -19,7 +19,7 @@ installed v0.2.1 disposable canary now pass. The status remains partial for
 the provider-dependent high-risk follow-up, AppArmor enforcement on this WSL
 host, and the external publication gates.
 
-The current source-level run for candidate `0.2.1` was `511 passed, 4
+The current source-level run for candidate `0.2.1` was `512 passed, 4
 skipped`.
 The tracked credential-free `tools/standalone-smoke.sh` is now included in
 the public export allowlist and the export regression check passes. External
@@ -248,7 +248,7 @@ full provider responses in the evidence record.
   package, Core manifest, and changelog.
 - Current local source checks: `python3 -m compileall -q
   app/ha_switchboard custom_components/ha_switchboard tools tests` passed;
-  `python3 -m pytest -q tests` passed (`511 passed, 4 skipped`); and
+  `python3 -m pytest -q tests` passed (`512 passed, 4 skipped`); and
   `python3 tools/check_release_boundary.py --quality` passed. The current
   skips are the unavailable host ConversationEntity/config-flow dependencies
   and two opt-in live fixture probes. `git diff --check` is clean for the

@@ -434,7 +434,7 @@ all user stories are implemented.
   path, credentials, query, or fragment), and its regression test is included
   in the current source result. T059 now also supports explicitly supplied
   second-user and natural-TTL opt-ins without changing the safe default or
-  persisting credentials. The current source result is 511 tests with 4
+  persisting credentials. The current source result is 512 tests with 4
   expected skips; the preserve-first/local-acceptance focused suite passes
   32 tests with one opt-in live skip.
 - Latest multi-target/UI hardening: explicit light, switch, and fan on/off
@@ -456,7 +456,7 @@ all user stories are implemented.
   standalone Compose model has a credential-free bounded smoke validator, and
   Core diagnostics expose the last reconcile trigger (`startup`, `manual`,
   `invalidation`, `recovery`, or `periodic`). The current source result is
-  **511 passed, 4 skipped**; these changes do not close the live provider or
+  **512 passed, 4 skipped**; these changes do not close the live provider or
   external-release gates.
 - Latest recovery hardening: the authorized restart path now requires a
   strict boolean opt-in, rejects malformed or unsuccessful non-empty Core
@@ -480,7 +480,7 @@ all user stories are implemented.
 
 - Reviewed source candidate: coordinated v0.2.1 metadata across the App,
   gateway, Core integration, packaging, and documentation authorities.
-- Full source validation passes: **511 passed, 4 expected skips**. The focused
+- Full source validation passes: **512 passed, 4 expected skips**. The focused
   provider/release/preflight regression slice passes **48 tests**.
 - `check_release_boundary.py --versions`, `check_release_boundary.py
   --quality`, the release boundary check, the

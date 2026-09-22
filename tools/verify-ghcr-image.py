@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import json
 import os
 import re
@@ -238,10 +239,18 @@ class Registry:
             headers={"Authorization": f"Bearer {self.token}", "Accept": accept},
         )
         with urllib.request.urlopen(request, timeout=30) as response:
-            payload = json.load(response)
+            raw_body = response.read()
+            payload = json.loads(raw_body)
         if not isinstance(payload, dict):
             raise ValueError(f"registry response was not an object: {path}")
-        return payload, response.headers.get("Docker-Content-Digest")
+        response_digest = response.headers.get("Docker-Content-Digest")
+        # GHCR does not consistently emit Docker-Content-Digest for blob
+        # reads. Hash the exact bytes returned by the registry when the
+        # optional response header is absent; a supplied header is still
+        # authoritative and is checked against the requested descriptor.
+        if not response_digest:
+            response_digest = f"sha256:{hashlib.sha256(raw_body).hexdigest()}"
+        return payload, response_digest
 
     def verify(
         self, tag: str, expected_architectures: set[str], source_url: str, revision: str = ""
